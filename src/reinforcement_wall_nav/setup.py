@@ -19,6 +19,7 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
+            'tb3_node = reinforcement_wall_nav.tb3_node:main',
         ],
     },
 )
