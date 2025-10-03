@@ -29,6 +29,7 @@ This repository demonstrates a TurtleBot3 robot learning to follow walls using r
 4. Build Workspace
     ```bash
     cd ~/ros2_ws/
+    source /opt/ros/jazzy/setup.bash
     colcon build --symlink-install
     source install/setup.bash
     ```
