@@ -15,9 +15,8 @@ setup(
     zip_safe=True,
     maintainer='hayden',
     maintainer_email='haydenmcameron@proton.me',
-    description='TODO: Package description',
+    description='Reinforcement Learning wall navigation for TurtleBot3 in Gazebo',
     license='MIT',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
         ],
