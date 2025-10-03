@@ -32,13 +32,14 @@ This repository demonstrates a TurtleBot3 robot learning to follow walls using r
     source /opt/ros/jazzy/setup.bash
     colcon build --symlink-install
     source install/setup.bash
+    export TURTLEBOT3_MODEL=burger
     ```
 
 ## Running the Simulation
 
 Launch wall-following simulation:
 ```bash
-ros2 launch wall_following_ros2 wall_following.launch
+ros2 launch wall_following_ros2 wall_following.launch.py
 ```
 
 Run reinforcement learning scripts:
