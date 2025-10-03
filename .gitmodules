@@ -14,6 +14,3 @@
 	path = src/turtlebot3_simulations
 	url = https://github.com/ROBOTIS-GIT/turtlebot3_simulations.git
 	branch = jazzy
-[submodule "src/wall_following_ros2"]
-	path = src/wall_following_ros2
-	url = git@gitlab.com:peng-lab/wall_following_ros2.git
