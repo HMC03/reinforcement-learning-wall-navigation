@@ -7,6 +7,18 @@
   <maintainer email="haydenmcameron@proton.me">hayden</maintainer>
   <license>MIT</license>
 
+  <!-- Build tools -->
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <!-- Runtime dependencies -->
+  <depend>rclpy</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>gazebo_ros</depend>
+  <depend>turtlebot3_gazebo</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>rviz2</depend>
+
   <export>
     <build_type>ament_python</build_type>
   </export>
