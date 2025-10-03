@@ -29,7 +29,7 @@ This repository demonstrates a TurtleBot3 robot learning to follow walls using r
 4. Build Workspace
     ```bash
     cd ~/ros2_ws/
-    colcon build
+    colcon build --symlink-install
     source install/setup.bash
     ```
 
