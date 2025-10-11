@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+import os
 
 package_name = 'reinforcement_wall_nav'
 
@@ -7,9 +8,17 @@ setup(
     version='0.0.0',
     packages=find_packages(exclude=['test']),
     data_files=[
-        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/reinforcement_wall_nav.launch.py']),
+        (os.path.join('share', package_name), ['package.xml']),
+        (os.path.join('share', 'ament_index', 'resource_index', 'packages'), [
+            os.path.join('resource', package_name)
+        ]),
+        (os.path.join('share', package_name, 'launch'), [
+            os.path.join('launch', 'reinforcement_wall_nav.launch.py'),
+            os.path.join('launch', 'turtlebot3_largemaze.launch.py'),
+        ]),
+        (os.path.join('share', package_name, 'worlds'), [
+            os.path.join('worlds', 'largemaze.world')
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
