@@ -72,10 +72,13 @@ def generate_launch_description():
     )
 
     set_env_vars_resources = AppendEnvironmentVariable(
-            'GZ_SIM_RESOURCE_PATH',
-            os.path.join(
-                get_package_share_directory('turtlebot3_gazebo'),
-                'models'))
+    'GZ_SIM_RESOURCE_PATH',
+    ':'.join([
+        os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'models'),
+        os.path.join(get_package_share_directory('reinforcement_wall_nav'), 'worlds'),
+        os.path.join(get_package_share_directory('reinforcement_wall_nav'), 'models')
+    ])
+)
 
     ld = LaunchDescription()
 
