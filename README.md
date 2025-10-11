@@ -39,15 +39,16 @@ This repository demonstrates a TurtleBot3 robot learning to follow walls using r
 
 Launch wall-following simulation:
 ```bash
-ros2 launch wall_following_ros2 wall_following.launch.py
+ros2 launch reinforcement_wall_nav turtlebot3_largemaze.launch.py
 ```
 
 Run reinforcement learning scripts:
 ```bash
-ros2 run wall_following_ros2 <script_name>.py
+ros2 run reinforcement_wall_nav <script_name>.py
 ```
 
 Available scripts:
+* manual_qtable.py
 * q_td_train.py – Q-Learning training
 * q_td_run.py – Q-Learning testing
 * sarsa_train.py – SARSA training
