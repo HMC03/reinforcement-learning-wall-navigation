@@ -36,7 +36,7 @@
       name="gz::sim::systems::Imu">
     </plugin>
 
-    <light name='sun' type='directional'>
+    <light name='maze_sun' type='directional'>
       <cast_shadows>1</cast_shadows>
       <pose frame=''>0 0 10 0 -0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
