@@ -20,11 +20,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import AppendEnvironmentVariable
-from launch.actions import IncludeLaunchDescription
+from launch.actions import AppendEnvironmentVariable, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-
 
 def generate_launch_description():
     launch_file_dir = os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'launch')
@@ -81,8 +79,8 @@ def generate_launch_description():
     # Add the commands to the launch description
     ld.add_action(gzserver_cmd)
     ld.add_action(gzclient_cmd)
-    ld.add_action(spawn_turtlebot_cmd)
     ld.add_action(robot_state_publisher_cmd)
+    ld.add_action(spawn_turtlebot_cmd)
     ld.add_action(set_env_vars_resources)
 
     return ld
