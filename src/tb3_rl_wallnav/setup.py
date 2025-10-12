@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 import os
 
-package_name = 'reinforcement_wall_nav'
+package_name = 'tb3_rl_wallnav'
 
 setup(
     name=package_name,
@@ -28,7 +28,7 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'tb3_node = reinforcement_wall_nav.tb3_node:main',
+            'tb3_node = tb3_rl_wallnav.tb3_node:main',
         ],
     },
 )

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>reinforcement_wall_nav</name>
+  <name>tb3_rl_wallnav</name>
   <version>0.0.0</version>
   <description>Reinforcement Learning wall navigation for TurtleBot3 in Gazebo</description>
   <maintainer email="haydenmcameron@proton.me">hayden</maintainer>

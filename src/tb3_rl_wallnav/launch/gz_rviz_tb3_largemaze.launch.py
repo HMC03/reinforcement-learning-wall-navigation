@@ -33,7 +33,7 @@ def generate_launch_description():
     y_pose = LaunchConfiguration('y_pose', default='-0.5')
 
     world = os.path.join(
-        get_package_share_directory('reinforcement_wall_nav'),
+        get_package_share_directory('tb3_rl_wallnav'),
         'worlds',
         'largemaze.world'
     )
