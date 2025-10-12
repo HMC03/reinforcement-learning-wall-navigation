@@ -39,7 +39,7 @@ This repository demonstrates a TurtleBot3 robot learning to follow walls using r
 
 Launch wall-following simulation:
 ```bash
-ros2 launch reinforcement_wall_nav turtlebot3_largemaze.launch.py
+ros2 launch reinforcement_wall_nav gz_rviz_tb3_largemaze.launch.py
 ```
 
 Run reinforcement learning scripts:

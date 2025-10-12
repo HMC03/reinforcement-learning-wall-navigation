@@ -13,9 +13,8 @@ setup(
             os.path.join('resource', package_name)
         ]),
         (os.path.join('share', package_name, 'launch'), [
-            os.path.join('launch', 'reinforcement_wall_nav.launch.py'),
-            os.path.join('launch', 'turtlebot3_largemaze.launch.py'),
-            os.path.join('launch', 'class_example.launch.py'),
+            os.path.join('launch', 'gz_tb3_largemaze.launch.py'),
+            os.path.join('launch', 'gz_rviz_tb3_largemaze.launch.py'),
         ]),
         (os.path.join('share', package_name, 'worlds'), [
             os.path.join('worlds', 'largemaze.world')
