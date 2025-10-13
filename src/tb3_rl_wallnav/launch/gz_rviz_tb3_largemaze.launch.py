@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # TurtleBot3 simulation launch file for Gazebo with RViz.
 
 import os
