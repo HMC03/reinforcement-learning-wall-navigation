@@ -28,7 +28,7 @@ setup(
     license='MIT',
     entry_points={
         'console_scripts': [
-            'tb3_node = tb3_rl_wallnav.tb3_node:main',
+            'manual_qtable = tb3_rl_wallnav.manual_qtable:main',
         ],
     },
 )
