@@ -3,86 +3,84 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 import numpy as np
-import math
+import time
+from colorama import Fore, Style, init
+
+init(autoreset=True)
 
 class LidarDebug(Node):
     def __init__(self):
-        super().__init__('lidar_debug')
+        super().__init__('lidar_debug_node')
         self.subscription = self.create_subscription(
             LaserScan,
             '/scan',
             self.scan_callback,
-            10
-        )
-        self.latest_scan = None
-        self.get_logger().info('Lidar debug node started. Listening to /scan topic...')
+            10)
+        self.last_print_time = 0.0
+        self.get_logger().info("LIDAR Debug Node Started. Listening to /scan topic...")
 
-        # Print every 0.5 seconds
-        self.timer = self.create_timer(0.5, self.print_latest_scan)
+    def scan_callback(self, msg: LaserScan):
+        now = time.time()
+        # limit updates to 0.5 Hz
+        if now - self.last_print_time < 2.0:
+            return
+        self.last_print_time = now
 
-    def scan_callback(self, msg):
-        self.latest_scan = msg
-
-    def get_avg_range(self, msg, angle_deg, window_deg=5):
-        """Return average distance for a small angular window around a given direction."""
-        angle_min = msg.angle_min
-        angle_increment = msg.angle_increment
         ranges = np.array(msg.ranges)
+        ranges = np.where(np.isinf(ranges), np.nan, ranges)
+        angle_increment_deg = np.degrees(msg.angle_increment)
         num_readings = len(ranges)
 
-        # Convert degrees to radians
-        angle_rad = math.radians(angle_deg)
-        window_rad = math.radians(window_deg)
+        def avg_distance(center_deg, window=5):
+            center_deg %= 360
+            start_deg = (center_deg - window) % 360
+            end_deg = (center_deg + window) % 360
+            if start_deg < end_deg:
+                indices = np.arange(int(start_deg / angle_increment_deg),
+                                    int(end_deg / angle_increment_deg))
+            else:
+                indices = np.concatenate([
+                    np.arange(0, int(end_deg / angle_increment_deg)),
+                    np.arange(int(start_deg / angle_increment_deg), num_readings)
+                ])
+            values = ranges[indices]
+            finite_values = values[np.isfinite(values)]
+            return np.nanmean(finite_values) if len(finite_values) > 0 else np.nan
 
-        # Convert angle range to index range
-        start_idx = int((angle_rad - window_rad - angle_min) / angle_increment)
-        end_idx = int((angle_rad + window_rad - angle_min) / angle_increment)
+        directions = {
+            "Front": 0,
+            "Front Left": 45,
+            "Left": 90,
+            "Rear Left": 135,
+            "Rear": 180,
+            "Rear Right": 225,
+            "Right": 270,
+            "Front Right": 315
+        }
 
-        start_idx = max(0, start_idx)
-        end_idx = min(num_readings - 1, end_idx)
+        distances = {name: avg_distance(angle) for name, angle in directions.items()}
 
-        segment = ranges[start_idx:end_idx]
-        finite_values = segment[np.isfinite(segment)]
-
-        if len(finite_values) == 0:
-            return None
-        return float(np.mean(finite_values))
-
-    def format_distance(self, dist):
-        """Color-code distances for quick interpretation."""
-        if dist is None:
-            return "  ---  "
-        dist = round(dist, 2)
-        if dist < 0.3:
-            return f"\033[91m{dist:5.2f}\033[0m"   # Red (too close)
-        elif dist < 0.6:
-            return f"\033[93m{dist:5.2f}\033[0m"   # Yellow (medium)
-        else:
-            return f"\033[92m{dist:5.2f}\033[0m"   # Green (clear)
-
-    def print_latest_scan(self):
-        """Print lidar distance averages in 45° increments."""
-        if self.latest_scan is None:
-            return
-
-        msg = self.latest_scan
-
-        # Full-circle coverage in 45° increments
-        # 0 = front, positive = right side, negative = left side
-        angles = [-135, -90, -45, 0, 45, 90, 135, 180]
-        readings = {a: self.get_avg_range(msg, a) for a in angles}
+        def colorize(value):
+            if np.isnan(value):
+                return f"{Fore.MAGENTA}---{Style.RESET_ALL}"
+            if value < 0.6:
+                color = Fore.RED
+            elif value < 1.5:
+                color = Fore.YELLOW
+            else:
+                color = Fore.GREEN
+            return f"{color}{value:.2f}{Style.RESET_ALL}"
 
         print("\n--- LIDAR AVERAGE DISTANCES (m) ---")
-        print(
-            f"Rear Left: {self.format_distance(readings[-135])}  "
-            f"Left: {self.format_distance(readings[-90])}  "
-            f"Front Left: {self.format_distance(readings[-45])}  "
-            f"Front: {self.format_distance(readings[0])}  "
-            f"Front Right: {self.format_distance(readings[45])}  "
-            f"Right: {self.format_distance(readings[90])}  "
-            f"Rear Right: {self.format_distance(readings[135])}  "
-            f"Rear: {self.format_distance(readings[180])}"
-        )
+        print(f"Front Left:  {colorize(distances['Front Left'])}   "
+              f"Front:   {colorize(distances['Front'])}   "
+              f"Front Right: {colorize(distances['Front Right'])}")
+        print(f"Left:        {colorize(distances['Left'])}   "
+              f"               "
+              f"Right:       {colorize(distances['Right'])}")
+        print(f"Rear Left:   {colorize(distances['Rear Left'])}   "
+              f"Rear:   {colorize(distances['Rear'])}   "
+              f"Rear Right:  {colorize(distances['Rear Right'])}")
 
 def main(args=None):
     rclpy.init(args=args)
