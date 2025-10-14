@@ -38,7 +38,43 @@ class ManualQTableNode(Node):
         self.lidar_ranges = np.nan_to_num(ranges, nan=msg.range_max, posinf=msg.range_max)
 
         # Compute the corresponding angle for each beam
-        self.lidar_angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
+        self.lidar_angles = np.rad2deg(msg.angle_min + np.arange(len(ranges)) * msg.angle_increment)
+
+    def get_lidar_segments(self):
+        """Compute 10th-percentile LIDAR distances for key angular segments."""
+        if self.lidar_ranges is None:
+            return None
+
+        deg = self.lidar_angles
+        ranges = self.lidar_ranges
+
+        def percentile_in_range(low, high):
+            """Return the 10th percentile distance in the given angular window."""
+            # Handle wrap-around for rear segment (e.g., 160°–180° and -180°–-160°)
+            if low < high:
+                mask = (deg >= low) & (deg <= high)
+            else:
+                mask = (deg >= low) | (deg <= high)
+
+            if not np.any(mask):
+                return np.nan
+
+            segment = ranges[mask]
+            return np.percentile(segment, 10)  # “close but robust” distance
+
+        # Define key directions (in degrees)
+        lidar_segments = {
+            "rear_left":   percentile_in_range(120, 160),
+            "left":        percentile_in_range(60, 120),
+            "front_left":  percentile_in_range(20, 60),
+            "front":       percentile_in_range(-20, 20),
+            "front_right": percentile_in_range(-60, -20),
+            "right":       percentile_in_range(-120, -60),
+            "rear_right":  percentile_in_range(-160, -120),
+            "rear":        percentile_in_range(160, -160),  # handles wrap-around
+        }
+
+        return lidar_segments
 
     def control_loop(self):
         """Called periodically to decide motion."""
