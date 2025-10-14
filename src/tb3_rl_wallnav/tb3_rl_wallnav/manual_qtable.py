@@ -4,6 +4,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 import numpy as np
+import itertools
 
 class ManualQTableNode(Node):
     def __init__(self):
@@ -26,6 +27,33 @@ class ManualQTableNode(Node):
         # Latest LIDAR data
         self.lidar_ranges = None
         self.lidar_angles = None
+
+        # Define q_table
+        self.q_table = {}
+
+        for state in itertools.product([0, 1, 2], repeat=4):
+            rear_left, left, front_left, front = state
+
+            # Default action
+            action = 0  # forward
+
+            # --- Front obstacle logic with context ---
+            if front == 0:
+                if left > 1:       # left is open
+                    action = 1     # turn left
+                else:              # left also blocked
+                    action = 2     # turn right
+
+            # --- Wall too close on left ---
+            elif left == 0 or front_left == 0:
+                action = 2
+
+            # --- Wall too far on left ---
+            elif left == 2 and front_left == 2:
+                action = 1
+
+            # Store in Q-table
+            self.q_table[state] = action
 
         self.get_logger().info('Manual Q-table controller started.')
 
@@ -67,18 +95,56 @@ class ManualQTableNode(Node):
 
         return lidar_segments
 
+    def get_state(self, segments):
+        """Convert segment distances into a discrete state tuple."""
+        def categorize(dist):
+            if dist < 0.4:
+                return 0  # Short
+            elif dist > 0.6:
+                return 2  # Long
+            else:
+                return 1  # Ideal
+
+        return (
+            categorize(segments['rear_left']),
+            categorize(segments['left']),
+            categorize(segments['front_left']),
+            categorize(segments['front'])
+        )
+    
     def control_loop(self):
-        """Called periodically to decide motion."""
+        """Called periodically to decide motion using the Q-table."""
         if self.lidar_ranges is None:
             return  # Wait until we have data
-       
-        # --- Placeholder logic for now ---
-        # We’ll later use a Q-table here to decide an action.
-        # For now, let's just stop the robot.
+
+        # 1. Get LIDAR segments
+        segments = self.get_lidar_segments()
+        if segments is None:
+            return
+
+        # 2. Convert segments to discrete state
+        state = self.get_state(segments)
+
+        # 3. Look up action in Q-table
+        action = self.q_table.get(state, 0)  # default to forward if state unknown
+
+        # 4. Create Twist command based on action
         cmd = Twist()
-        cmd.linear.x = 0.0
-        cmd.angular.z = 0.0
+        if action == 0:          # Forward
+            cmd.linear.x = 0.15
+            cmd.angular.z = 0.0
+        elif action == 1:        # Turn left
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.4
+        elif action == 2:        # Turn right
+            cmd.linear.x = 0.0
+            cmd.angular.z = -0.4
+
+        # 5. Publish the command
         self.cmd_vel_pub.publish(cmd)
+
+        # 6. log for debugging
+        self.get_logger().info(f"State: {state} -> Action: {action}")
 
 def main(args=None):
     rclpy.init(args=args)
