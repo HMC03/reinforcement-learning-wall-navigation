@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TwistStamped
 import numpy as np
 import itertools
 
@@ -11,7 +11,7 @@ class ManualQTableNode(Node):
         super().__init__('manual_qtable_node')
 
         # Publisher for robot velocity
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
 
         # Subscriber for LIDAR data
         self.scan_sub = self.create_subscription(
@@ -129,16 +129,16 @@ class ManualQTableNode(Node):
         action = self.q_table.get(state, 0)  # default to forward if state unknown
 
         # 4. Create Twist command based on action
-        cmd = Twist()
+        cmd = TwistStamped()
         if action == 0:          # Forward
-            cmd.linear.x = 0.15
-            cmd.angular.z = 0.0
+            cmd.twist.linear.x = 0.1
+            cmd.twist.angular.z = 0.0
         elif action == 1:        # Turn left
-            cmd.linear.x = 0.0
-            cmd.angular.z = 0.4
+            cmd.twist.linear.x = 0.0
+            cmd.twist.angular.z = 0.2
         elif action == 2:        # Turn right
-            cmd.linear.x = 0.0
-            cmd.angular.z = -0.4
+            cmd.twist.linear.x = 0.0
+            cmd.twist.angular.z = -0.2
 
         # 5. Publish the command
         self.cmd_vel_pub.publish(cmd)
