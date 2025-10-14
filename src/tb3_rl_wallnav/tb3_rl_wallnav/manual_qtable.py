@@ -24,18 +24,25 @@ class ManualQTableNode(Node):
         self.timer = self.create_timer(0.1, self.control_loop)
 
         # Latest LIDAR data
-        self.ranges = None
+        self.lidar_ranges = None
+        self.lidar_angles = None
 
         self.get_logger().info('Manual Q-table controller started.')
 
     def scan_callback(self, msg: LaserScan):
-        """Callback that receives LIDAR data."""
-        # Replace inf/nan with max range value for simplicity
-        self.ranges = np.nan_to_num(msg.ranges, nan=msg.range_max, posinf=msg.range_max)
+        """Callback that receives LIDAR data and stores usable arrays."""
+        # Convert to numpy array
+        ranges = np.array(msg.ranges)
+
+        # Replace NaN or inf with max range for safety
+        self.lidar_ranges = np.nan_to_num(ranges, nan=msg.range_max, posinf=msg.range_max)
+
+        # Compute the corresponding angle for each beam
+        self.lidar_angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
 
     def control_loop(self):
         """Called periodically to decide motion."""
-        if self.ranges is None:
+        if self.lidar_ranges is None:
             return  # Wait until we have data
 
         # --- Placeholder logic for now ---
