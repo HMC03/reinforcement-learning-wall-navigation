@@ -3,10 +3,11 @@ import os
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import TwistStamped, Pose
+from geometry_msgs.msg import TwistStamped
 from ros_gz_interfaces.srv import SetEntityPose
 from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import Header
+from rclpy.duration import Duration
 import numpy as np
 import itertools
 import random
@@ -31,7 +32,7 @@ class QLearnTrainNode(Node):
         self.timer = self.create_timer(0.1, self.control_loop)
 
         # Service client for resetting robot pose
-        self.set_pose_client = self.create_client(SetEntityPose, '/set_entity_pose')
+        self.set_pose_client = self.create_client(SetEntityPose, '/world/default/set_pose')
 
         # Latest LIDAR data
         self.lidar_ranges = None
@@ -249,20 +250,34 @@ class QLearnTrainNode(Node):
         # Alternate between spawn locations
         self.last_reset = (self.last_reset + 1) % 2
         location = self.reset_locations[self.last_reset]
-        pose = Pose()
-        pose.position.x = location['x_pose']
-        pose.position.y = location['y_pose']
-        pose.position.z = 0.0
-        pose.orientation.w = 1.0  # Default orientation (no rotation)
 
+        # Prepare request
         request = SetEntityPose.Request()
-        request.entity.name = 'turtlebot3'  # Adjust if your robot's name differs
-        request.pose = pose
+        request.entity.name = 'burger'
+        request.entity.type = 2
+        request.pose.position.x = location['x_pose']
+        request.pose.position.y = location['y_pose']
+        request.pose.position.z = 0.0
+        request.pose.orientation.w = 1.0  # Default orientation (no rotation)
 
+        # Send request
         future = self.set_pose_client.call_async(request)
         rclpy.spin_until_future_complete(self, future)
-        if future.result() is not None:
+
+        if future.result() and future.result().success:
             self.get_logger().info(f"Reset robot to ({location['x_pose']}, {location['y_pose']})")
+
+            # Stop robot motion immediately
+            stop_twist = TwistStamped()
+            stop_twist.header = Header(stamp=self.get_clock().now().to_msg())
+            stop_twist.twist.linear.x = 0.0
+            stop_twist.twist.angular.z = 0.0
+            self.cmd_vel_pub.publish(stop_twist)
+            self.get_logger().info("Published stop command")
+
+            # Short delay to allow physics to stabilize
+            self.get_clock().sleep_for(Duration(seconds=0.3))
+            self.get_logger().info("Stabilization delay complete")
         else:
             self.get_logger().error("Failed to reset robot pose")
 
@@ -273,6 +288,7 @@ class QLearnTrainNode(Node):
         self.prev_state = None
         self.prev_action = None
         self.lidar_ranges = None
+
 
     def save_q_table(self):
         """Save the Q-table to a file."""
