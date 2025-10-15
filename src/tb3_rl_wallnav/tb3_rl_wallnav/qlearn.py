@@ -5,7 +5,6 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TwistStamped
 from ros_gz_interfaces.srv import SetEntityPose
-from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import Header
 import numpy as np
 import itertools
@@ -55,6 +54,15 @@ class QLearnTrainNode(Node):
         self.prev_state = None
         self.prev_action = None
 
+        # Episodes
+        self.max_episodes = 500
+        self.max_steps = 1000
+        self.episode = 0
+        self.episode_steps = 0
+        self.episode_reward = 0.0
+        self.lost_count = 0
+        self.avg_rewards = []
+
         # Declare ROS parameters
         self.declare_parameter('alpha', 0.1)  # Learning rate
         self.declare_parameter('gamma', 0.99)  # Discount factor
@@ -76,12 +84,21 @@ class QLearnTrainNode(Node):
             self.q_table[state] = np.zeros(5)  # Initialize Q-values to zeros for all actions
         self.get_logger().info(f"Q-table size: {len(self.q_table)}, Sample: {self.q_table[(0,0,0)]}")
 
-        # Create directories in package share directory
-        package_src = os.path.dirname(os.path.abspath(__file__))
-        self.qtable_dir = os.path.join(package_src, 'qtables')
-        self.reward_dir = os.path.join(package_src, 'rewards')
+        # Create directories in package source directory
+        script_path = os.path.abspath(__file__)  # Path to qlearn.py
+        self.get_logger().info(f"Script path: {script_path}")  # Debug script location
+        package_root = os.path.dirname(script_path)  # Start with tb3_rl_wallnav/tb3_rl_wallnav
+        if 'build' in package_root or 'install' in package_root:
+            # Navigate to src/tb3_rl_wallnav from build or install
+            package_root = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(package_root))), 'src', 'tb3_rl_wallnav')
+        self.qtable_dir = os.path.join(package_root, 'qtables')
+        self.reward_dir = os.path.join(package_root, 'rewards')
         os.makedirs(self.qtable_dir, exist_ok=True)
         os.makedirs(self.reward_dir, exist_ok=True)
+
+        # Log paths for debugging
+        self.get_logger().info(f"Q-table dir: {self.qtable_dir}")
+        self.get_logger().info(f"Reward dir: {self.reward_dir}")
 
         # Load Q-table if it exists
         self.q_table_file = os.path.join(self.qtable_dir, 'qlearn_qtable.npy')
@@ -89,16 +106,9 @@ class QLearnTrainNode(Node):
             loaded = np.load(self.q_table_file, allow_pickle=True).item()
             self.q_table.update(loaded)
             self.get_logger().info(f"Loaded Q-table from {self.q_table_file}")
+        else:
+            self.get_logger().info(f"Q-table file {self.q_table_file} not found, starting with empty Q-table")
         self.get_logger().info(f"Q-table size: {len(self.q_table)}, Sample: {self.q_table[(0,0,0)]}")
-
-        # Episodes
-        self.max_episodes = 500
-        self.max_steps = 1000
-        self.episode = 0
-        self.episode_steps = 0
-        self.episode_reward = 0.0
-        self.lost_count = 0
-        self.avg_rewards = []
 
         # Load last episode from rewards CSV
         self.reward_file = os.path.join(self.reward_dir, 'qlearn_rewards.csv')
@@ -110,6 +120,8 @@ class QLearnTrainNode(Node):
                 if episodes:
                     self.episode = max(episodes) + 1
                     self.get_logger().info(f"Resuming from episode {self.episode}")
+        else:
+            self.get_logger().info(f"Reward file {self.reward_file} not found, starting from episode 0")
 
         # Initialize CSV file for reward logging (only write header if new)
         if not os.path.exists(self.reward_file):
@@ -211,7 +223,18 @@ class QLearnTrainNode(Node):
         if rear_left_dist < 0.2: # Near rear left collision = Bad
             reward -= 1
 
-        # Action-specific adjustments
+        # --- Continuous Adjustments ---
+        # Fine-tune wall distance (target: 0.5m)
+        front_left_error = abs(front_left_dist - 0.5)
+        rear_left_error = abs(rear_left_dist - 0.5)
+        reward -= 2.0 * front_left_error  # Penalize deviation from 0.5m
+        reward -= 2.0 * rear_left_error   # Penalize deviation from 0.5m
+
+        # Encourage parallel alignment
+        parallel_error = abs(front_left_dist - rear_left_dist)
+        reward -= 2.0 * parallel_error  # Penalize misalignment
+
+        # --- Action-specific adjustments ---
         if prev_action == 1:  # Forward-left
             if front_left_dist > 0.6:  # Moving toward wall when too far = Good
                 reward += 1.0
@@ -225,17 +248,6 @@ class QLearnTrainNode(Node):
         if prev_action in [3, 4]:  # Rotate left/right
             if parallel_error > 0.5:  # Correcting misalignment = Good
                 reward += 1.0
-
-        # --- Continuous Adjustments ---
-        # Fine-tune wall distance (target: 0.5m)
-        front_left_error = abs(front_left_dist - 0.5)
-        rear_left_error = abs(rear_left_dist - 0.5)
-        reward -= 2.0 * front_left_error  # Penalize deviation from 0.5m
-        reward -= 2.0 * rear_left_error   # Penalize deviation from 0.5m
-
-        # Encourage parallel alignment
-        parallel_error = abs(front_left_dist - rear_left_dist)
-        reward -= 2.0 * parallel_error  # Penalize misalignment
 
         return reward
     
