@@ -7,7 +7,6 @@ from geometry_msgs.msg import TwistStamped
 from ros_gz_interfaces.srv import SetEntityPose
 from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import Header
-from rclpy.duration import Duration
 import numpy as np
 import itertools
 import random
@@ -78,9 +77,9 @@ class QLearnTrainNode(Node):
         self.get_logger().info(f"Q-table size: {len(self.q_table)}, Sample: {self.q_table[(0,0,0)]}")
 
         # Create directories in package share directory
-        package_dir = get_package_share_directory('tb3_rl_wallnav')
-        self.qtable_dir = os.path.join(package_dir, 'qtables')
-        self.reward_dir = os.path.join(package_dir, 'rewards')
+        package_src = os.path.dirname(os.path.abspath(__file__))
+        self.qtable_dir = os.path.join(package_src, 'qtables')
+        self.reward_dir = os.path.join(package_src, 'rewards')
         os.makedirs(self.qtable_dir, exist_ok=True)
         os.makedirs(self.reward_dir, exist_ok=True)
 
@@ -367,7 +366,7 @@ class QLearnTrainNode(Node):
         self.prev_action = action
         self.episode_steps += 1
         
-        # Check for terminal state
+        # Check for terminal state & save average reward
         if self.mode == 'train' and self.is_terminal_state(segments, state):
             avg_reward = self.episode_reward / max(self.episode_steps, 1)
             self.get_logger().info(f"Episode {self.episode} ended. Average Reward: {avg_reward:.2f}")
