@@ -13,7 +13,7 @@ def generate_launch_description():
     # Paths to package directories and RViz config.
     launch_file_dir = os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'launch')
     ros_gz_sim = get_package_share_directory('ros_gz_sim')
-    rviz_config_file = os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'rviz', 'tb3_gazebo.rviz')
+    rviz_config_file = os.path.join(get_package_share_directory('tb3_rl_wallnav'), 'rviz', 'tb3_gazebo.rviz')
 
     # Sim time and robot spawn position parameters.
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
