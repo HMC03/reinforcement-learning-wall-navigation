@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
+import os
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import TwistStamped, Pose
+from ros_gz_interfaces.srv import SetEntityPose
+from ament_index_python.packages import get_package_share_directory
+from std_msgs.msg import Header
 import numpy as np
 import itertools
 import random
+import csv
 
 class QLearnTrainNode(Node):
     def __init__(self):
@@ -24,6 +29,9 @@ class QLearnTrainNode(Node):
 
         # Timer for control loop (10 Hz)
         self.timer = self.create_timer(0.1, self.control_loop)
+
+        # Service client for resetting robot pose
+        self.set_pose_client = self.create_client(SetEntityPose, '/set_entity_pose')
 
         # Latest LIDAR data
         self.lidar_ranges = None
@@ -66,6 +74,54 @@ class QLearnTrainNode(Node):
         for state in itertools.product([0, 1, 2, 3], repeat=3):
             self.q_table[state] = np.zeros(5)  # Initialize Q-values to zeros for all actions
         self.get_logger().info(f"Q-table size: {len(self.q_table)}, Sample: {self.q_table[(0,0,0)]}")
+
+        # Create directories in package share directory
+        package_dir = get_package_share_directory('tb3_rl_wallnav')
+        self.qtable_dir = os.path.join(package_dir, 'qtables')
+        self.reward_dir = os.path.join(package_dir, 'rewards')
+        os.makedirs(self.qtable_dir, exist_ok=True)
+        os.makedirs(self.reward_dir, exist_ok=True)
+
+        # Load Q-table if it exists
+        self.q_table_file = os.path.join(self.qtable_dir, 'qlearn_qtable.npy')
+        if os.path.exists(self.q_table_file):
+            loaded = np.load(self.q_table_file, allow_pickle=True).item()
+            self.q_table.update(loaded)
+            self.get_logger().info(f"Loaded Q-table from {self.q_table_file}")
+        self.get_logger().info(f"Q-table size: {len(self.q_table)}, Sample: {self.q_table[(0,0,0)]}")
+
+        # Episodes
+        self.max_episodes = 500
+        self.max_steps = 1000
+        self.episode = 0
+        self.episode_steps = 0
+        self.episode_reward = 0.0
+        self.lost_count = 0
+        self.avg_rewards = []
+
+        # Load last episode from rewards CSV
+        self.reward_file = os.path.join(self.reward_dir, 'qlearn_rewards.csv')
+        if os.path.exists(self.reward_file):
+            with open(self.reward_file, 'r') as f:
+                reader = csv.reader(f)
+                next(reader)  # Skip header
+                episodes = [int(row[0]) for row in reader if row]
+                if episodes:
+                    self.episode = max(episodes) + 1
+                    self.get_logger().info(f"Resuming from episode {self.episode}")
+
+        # Initialize CSV file for reward logging (only write header if new)
+        if not os.path.exists(self.reward_file):
+            with open(self.reward_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Episode', 'Average_Reward'])
+
+        # Reset Locations
+        self.last_reset = 0
+        self.reset_locations = [
+            {'x_pose': -2.0, 'y_pose': -0.5},
+            {'x_pose': 1.0, 'y_pose': 1.5}
+        ]
 
     def scan_callback(self, msg: LaserScan):
         """Callback that receives LIDAR data and stores usable arrays."""
@@ -117,7 +173,7 @@ class QLearnTrainNode(Node):
             categorize(segments['front_left']),
             categorize(segments['rear_left'])
         )
-    
+
     def get_reward(self, segments, prev_action):
         """Compute reward based on LIDAR segments and previous action for left-wall following."""
         # Extract segment values
@@ -161,11 +217,80 @@ class QLearnTrainNode(Node):
         reward = -(collision_penalty + wall_penalty + parallel_penalty)
         return reward
     
+    def is_terminal_state(self, segments, state):
+        """Check if the current state is terminal."""
+        # Collision check
+        if segments['front'] < self.collision_threshold:
+            self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
+            return True
+        
+        # Lost state (3,3,3) check
+        if state == (3, 3, 3):
+            self.lost_count += 1
+            if self.lost_count >= 10:
+                self.get_logger().info(f"Lost for 10 steps! Episode {self.episode} over")
+                return True
+        else:
+            self.lost_count = 0  # Reset if not in lost state
+
+        # Step limit check
+        if self.episode_steps >= self.max_steps:
+            self.get_logger().info(f"Reached max steps ({self.max_steps})! Episode {self.episode} over")
+            return True
+
+        return False
+
+    def reset_environment(self):
+        """Reset the robot to one of the two spawn locations."""
+        if not self.set_pose_client.wait_for_service(timeout_sec=5.0):
+            self.get_logger().error("SetEntityPose service not available")
+            return
+
+        # Alternate between spawn locations
+        self.last_reset = (self.last_reset + 1) % 2
+        location = self.reset_locations[self.last_reset]
+        pose = Pose()
+        pose.position.x = location['x_pose']
+        pose.position.y = location['y_pose']
+        pose.position.z = 0.0
+        pose.orientation.w = 1.0  # Default orientation (no rotation)
+
+        request = SetEntityPose.Request()
+        request.entity.name = 'turtlebot3'  # Adjust if your robot's name differs
+        request.pose = pose
+
+        future = self.set_pose_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future)
+        if future.result() is not None:
+            self.get_logger().info(f"Reset robot to ({location['x_pose']}, {location['y_pose']})")
+        else:
+            self.get_logger().error("Failed to reset robot pose")
+
+        # Reset episode variables
+        self.episode_steps = 0
+        self.episode_reward = 0.0
+        self.lost_count = 0
+        self.prev_state = None
+        self.prev_action = None
+        self.lidar_ranges = None
+
+    def save_q_table(self):
+        """Save the Q-table to a file."""
+        np.save(self.q_table_file, self.q_table)
+        self.get_logger().info(f"Saved Q-table to {self.q_table_file}")
+
     def control_loop(self):
         """Called periodically to decide motion using the Q-table."""
         if self.lidar_ranges is None:
             return  # Wait until we have data
 
+        # 0. Check if training is complete
+        if self.episode >= self.max_episodes:
+            self.get_logger().info(f"Completed {self.max_episodes} episodes. Stopping training.")
+            self.save_q_table()
+            self.destroy_node()
+            return
+        
         # 1. Get LIDAR segments
         segments = self.get_lidar_segments()
         if segments is None:
@@ -186,6 +311,7 @@ class QLearnTrainNode(Node):
 
         # 4. Execute action
         cmd = TwistStamped()
+        cmd.header = Header(stamp=self.get_clock().now().to_msg())
         if action == 0:          # Forward
             cmd.twist.linear.x = self.fwd_speed
             cmd.twist.angular.z = 0.0
@@ -203,13 +329,14 @@ class QLearnTrainNode(Node):
             cmd.twist.angular.z = -self.turn_speed
         
         self.cmd_vel_pub.publish(cmd)
-        self.get_logger().info(f"State: {state} -> Action: {self.actions[action]}")
+        self.get_logger().info(f"Episode {self.episode}, Step {self.episode_steps}: State {state}, Action {self.actions[action]}")
 
         # 5. Update Q-table (in train mode)
         if self.mode == 'train':
             # Compute reward based on current segments and previous action
             if self.prev_action is not None:
                 reward = self.get_reward(segments, self.prev_action)
+                self.episode_reward += reward
             
                 # Update Q-table if we have a previous state/action
                 if self.prev_state is not None:
@@ -219,9 +346,28 @@ class QLearnTrainNode(Node):
                     self.q_table[self.prev_state][self.prev_action] = q_old + self.alpha * (reward + self.gamma * q_max - q_old)
                     self.get_logger().info(f"Q-update: State {self.prev_state}, Action {self.actions[self.prev_action]}, Reward {reward}, New Q {self.q_table[self.prev_state][self.prev_action]}")
             
-            # Store current state/action for next iteration
-            self.prev_state = state
-            self.prev_action = action
+        # Store current state/action for next iteration
+        self.prev_state = state
+        self.prev_action = action
+        self.episode_steps += 1
+        
+        # Check for terminal state
+        if self.mode == 'train' and self.is_terminal_state(segments, state):
+            avg_reward = self.episode_reward / max(self.episode_steps, 1)
+            self.get_logger().info(f"Episode {self.episode} ended. Average Reward: {avg_reward:.2f}")
+            self.avg_rewards.append([self.episode, avg_reward])
+            with open(self.reward_file, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([self.episode, avg_reward])
+            self.save_q_table()
+            self.episode += 1
+            self.reset_environment()
+
+    def destroy_node(self):
+            """Override to save Q-table on shutdown."""
+            self.save_q_table()
+            self.get_logger().info(f"Saved rewards to {self.reward_file}")
+            super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
