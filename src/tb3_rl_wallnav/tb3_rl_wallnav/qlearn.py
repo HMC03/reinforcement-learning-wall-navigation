@@ -5,6 +5,7 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TwistStamped
 import numpy as np
 import itertools
+import random
 
 class QLearnTrainNode(Node):
     def __init__(self):
@@ -124,10 +125,13 @@ class QLearnTrainNode(Node):
 
         # 3. Look up action in Q-table
         if state in self.q_table:
-            action = np.argmax(self.q_table[state])
+            if self.mode == 'train' and random.random() < self.epsilon:
+                action = random.randint(0, 4)  # Random action (0-4)
+            else:
+                action = np.argmax(self.q_table[state])  # Best action
         else:
-            action = 0  # Default to forward if state missing
-            self.get_logger().warn(f"State {state} not in Q-table, using default action")
+            action = 0  # Default to forward
+            self.get_logger().warn(f"State {state} not in Q-table")
 
         # 4. Map discrete actions to motion commands
         cmd = TwistStamped()
@@ -163,10 +167,11 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        node.get_logger().info("Shutting down node")
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
