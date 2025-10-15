@@ -19,6 +19,9 @@ setup(
         (os.path.join('share', package_name, 'worlds'), [
             os.path.join('worlds', 'largemaze.world')
         ]),
+        (os.path.join('share', package_name, 'rviz'), [
+            os.path.join('rviz', 'tb3_gazebo.rviz')
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
