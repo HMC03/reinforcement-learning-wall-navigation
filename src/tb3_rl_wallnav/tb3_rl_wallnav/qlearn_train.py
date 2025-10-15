@@ -39,49 +39,9 @@ class QLearnTrainNode(Node):
 
         # Define q_table
         self.q_table = {}
-
         for state in itertools.product([0, 1, 2, 3], repeat=3):
-            front, front_left, rear_left = state
-            action = 0  # Default = forward
-
-            # --- Case 1: Dead-end / U-turn needed ---
-            if front == 0 and front_left == 0 and rear_left == 0:
-                action = 4  # rotate right
-
-            # --- Case 2: Wall directly ahead ---
-            elif front == 0:
-                if front_left > 1:     # open to left
-                    action = 3         # rotate left
-                else:
-                    action = 4         # rotate right
-
-            # --- Case 3: Too close to wall (any left sensors short) ---
-            elif front_left == 0 or rear_left == 0:
-                action = 2  # forward right (veer away)
-
-            # --- Case 4: Wall too far (both left sensors far) ---
-            elif front_left >= 2 and rear_left >= 2:
-                action = 1  # forward left (hug wall)
-
-            # --- Case 5: Angled toward wall ---
-            elif front_left == 0 and rear_left > 1:
-                action = 2  # forward right
-
-            # --- Case 6: Angled away from wall ---
-            elif front_left > 1 and rear_left == 0:
-                action = 1  # forward left
-
-            # --- Case 7: Approaching a turn (front far, front_left close) ---
-            elif front > 1 and front_left == 0:
-                action = 1  # curve left (anticipate turn)
-
-            # --- Case 8: Default straight path ---
-            else:
-                action = 0  # forward
-
-            self.q_table[state] = action
-
-        self.get_logger().info('Manual Q-table controller started.')
+            self.q_table[state] = np.zeros(5)  # Initialize Q-values to zeros for all actions
+        self.get_logger().info(f"Q-table size: {len(self.q_table)}, Sample: {self.q_table[(0,0,0)]}")
 
     def scan_callback(self, msg: LaserScan):
         """Callback that receives LIDAR data and stores usable arrays."""
@@ -148,7 +108,11 @@ class QLearnTrainNode(Node):
         state = self.get_state(segments)
 
         # 3. Look up action in Q-table
-        action = self.q_table.get(state, 0)  # default to forward if state unknown
+        if state in self.q_table:
+            action = np.argmax(self.q_table[state])
+        else:
+            action = 0  # Default to forward if state missing
+            self.get_logger().warn(f"State {state} not in Q-table, using default action")
 
         # 4. Map discrete actions to motion commands
         cmd = TwistStamped()
