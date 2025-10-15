@@ -12,6 +12,7 @@ import numpy as np
 import itertools
 import random
 import csv
+import time
 
 class QLearnTrainNode(Node):
     def __init__(self):
@@ -261,25 +262,21 @@ class QLearnTrainNode(Node):
         request.pose.orientation.w = 1.0  # Default orientation (no rotation)
 
         # Send request
-        future = self.set_pose_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future)
+        self.set_pose_client.call_async(request)
+        self.get_logger().info(f"Reset robot to ({location['x_pose']}, {location['y_pose']})")
+        time.sleep(0.5)
 
-        if future.result() and future.result().success:
-            self.get_logger().info(f"Reset robot to ({location['x_pose']}, {location['y_pose']})")
+        # Stop robot motion immediately
+        stop_twist = TwistStamped()
+        stop_twist.header = Header(stamp=self.get_clock().now().to_msg())
+        stop_twist.twist.linear.x = 0.0
+        stop_twist.twist.angular.z = 0.0
+        self.cmd_vel_pub.publish(stop_twist)
+        self.get_logger().info("Published stop command")
 
-            # Stop robot motion immediately
-            stop_twist = TwistStamped()
-            stop_twist.header = Header(stamp=self.get_clock().now().to_msg())
-            stop_twist.twist.linear.x = 0.0
-            stop_twist.twist.angular.z = 0.0
-            self.cmd_vel_pub.publish(stop_twist)
-            self.get_logger().info("Published stop command")
-
-            # Short delay to allow physics to stabilize
-            self.get_clock().sleep_for(Duration(seconds=0.3))
-            self.get_logger().info("Stabilization delay complete")
-        else:
-            self.get_logger().error("Failed to reset robot pose")
+        # Short delay to allow physics to stabilize
+        time.sleep(0.5)
+        self.get_logger().info("Stabilization delay complete")
 
         # Reset episode variables
         self.episode_steps = 0
@@ -297,6 +294,9 @@ class QLearnTrainNode(Node):
 
     def control_loop(self):
         """Called periodically to decide motion using the Q-table."""
+        if self.episode_steps == 0:
+            self.get_logger().info(f"Starting Episode {self.episode} after reset.")
+
         if self.lidar_ranges is None:
             return  # Wait until we have data
 
