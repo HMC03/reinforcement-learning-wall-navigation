@@ -28,31 +28,57 @@ class ManualQTableNode(Node):
         self.lidar_ranges = None
         self.lidar_angles = None
 
+        # Define Actions
+        self.actions = {
+            0: "forward",
+            1: "forward_left",
+            2: "forward_right",
+            3: "rotate_left",
+            4: "rotate_right",
+        }
+
         # Define q_table
         self.q_table = {}
 
-        for state in itertools.product([0, 1, 2], repeat=4):
-            rear_left, left, front_left, front = state
+        for state in itertools.product([0, 1, 2, 3], repeat=3):
+            front, front_left, rear_left = state
+            action = 0  # Default = forward
 
-            # Default action
-            action = 0  # forward
+            # --- Case 1: Dead-end / U-turn needed ---
+            if front == 0 and front_left == 0 and rear_left == 0:
+                action = 4  # rotate right
 
-            # --- Front obstacle logic with context ---
-            if front == 0:
-                if left > 1:       # left is open
-                    action = 1     # turn left
-                else:              # left also blocked
-                    action = 2     # turn right
+            # --- Case 2: Wall directly ahead ---
+            elif front == 0:
+                if front_left > 1:     # open to left
+                    action = 3         # rotate left
+                else:
+                    action = 4         # rotate right
 
-            # --- Wall too close on left ---
-            elif left == 0 or front_left == 0:
-                action = 2
+            # --- Case 3: Too close to wall (any left sensors short) ---
+            elif front_left == 0 or rear_left == 0:
+                action = 2  # forward right (veer away)
 
-            # --- Wall too far on left ---
-            elif left == 2 and front_left == 2:
-                action = 1
+            # --- Case 4: Wall too far (both left sensors far) ---
+            elif front_left >= 2 and rear_left >= 2:
+                action = 1  # forward left (hug wall)
 
-            # Store in Q-table
+            # --- Case 5: Angled toward wall ---
+            elif front_left == 0 and rear_left > 1:
+                action = 2  # forward right
+
+            # --- Case 6: Angled away from wall ---
+            elif front_left > 1 and rear_left == 0:
+                action = 1  # forward left
+
+            # --- Case 7: Approaching a turn (front far, front_left close) ---
+            elif front > 1 and front_left == 0:
+                action = 1  # curve left (anticipate turn)
+
+            # --- Case 8: Default straight path ---
+            else:
+                action = 0  # forward
+
             self.q_table[state] = action
 
         self.get_logger().info('Manual Q-table controller started.')
@@ -84,13 +110,8 @@ class ManualQTableNode(Node):
 
         lidar_segments = {
             "front":       min(min10_in_range(0, 20), min10_in_range(340, 360)),
-            "front_left":  min10_in_range(20, 60),
-            "left":        min10_in_range(60, 120),
-            "rear_left":   min10_in_range(120, 160),
-            "rear":        min10_in_range(160, 200),
-            "rear_right":  min10_in_range(200, 240),
-            "right":       min10_in_range(240, 300),
-            "front_right": min10_in_range(300, 340), 
+            "front_left":  min10_in_range(40, 90),
+            "rear_left":   min10_in_range(90, 140),
         }
 
         return lidar_segments
@@ -99,17 +120,18 @@ class ManualQTableNode(Node):
         """Convert segment distances into a discrete state tuple."""
         def categorize(dist):
             if dist < 0.4:
-                return 0  # Short
-            elif dist > 0.6:
-                return 2  # Long
+                return 0  # Close
+            elif dist < 0.6:
+                return 1  # Medium
+            elif dist < 1:
+                return 2  # Far
             else:
-                return 1  # Ideal
+                return 3 # Very Far
 
         return (
-            categorize(segments['rear_left']),
-            categorize(segments['left']),
+            categorize(segments['front']),
             categorize(segments['front_left']),
-            categorize(segments['front'])
+            categorize(segments['rear_left'])
         )
     
     def control_loop(self):
@@ -128,23 +150,33 @@ class ManualQTableNode(Node):
         # 3. Look up action in Q-table
         action = self.q_table.get(state, 0)  # default to forward if state unknown
 
-        # 4. Create Twist command based on action
+        # 4. Map discrete actions to motion commands
         cmd = TwistStamped()
+        fwd_speed = 0.1
+        turn_speed = 0.25
+        curve_turn = 0.15
+
         if action == 0:          # Forward
-            cmd.twist.linear.x = 0.1
+            cmd.twist.linear.x = fwd_speed
             cmd.twist.angular.z = 0.0
-        elif action == 1:        # Turn left
+        elif action == 1:        # Forward Left
+            cmd.twist.linear.x = fwd_speed
+            cmd.twist.angular.z = curve_turn
+        elif action == 2:        # Forward Right
+            cmd.twist.linear.x = fwd_speed
+            cmd.twist.angular.z = -curve_turn
+        elif action == 3:        # Rotate Left
             cmd.twist.linear.x = 0.0
-            cmd.twist.angular.z = 0.2
-        elif action == 2:        # Turn right
+            cmd.twist.angular.z = turn_speed
+        elif action == 4:        # Rotate Right
             cmd.twist.linear.x = 0.0
-            cmd.twist.angular.z = -0.2
+            cmd.twist.angular.z = -turn_speed
 
         # 5. Publish the command
         self.cmd_vel_pub.publish(cmd)
 
-        # 6. log for debugging
-        self.get_logger().info(f"State: {state} -> Action: {action}")
+        # 6. Log for debugging
+        self.get_logger().info(f"State: {state} -> Action: {self.actions[action]}")
 
 def main(args=None):
     rclpy.init(args=args)
