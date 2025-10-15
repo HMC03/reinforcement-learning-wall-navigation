@@ -38,6 +38,14 @@ class QLearnTrainNode(Node):
             4: "rotate_right",
         }
 
+        # Action parameters
+        self.target_dist = 0.5
+        self.collision_threshold = 0.2
+        self.fwd_speed = 0.1
+        self.turn_speed = 0.2
+        self.prev_state = None
+        self.prev_action = None
+
         # Declare ROS parameters
         self.declare_parameter('alpha', 0.1)  # Learning rate
         self.declare_parameter('gamma', 0.99)  # Discount factor
@@ -110,6 +118,49 @@ class QLearnTrainNode(Node):
             categorize(segments['rear_left'])
         )
     
+    def get_reward(self, segments, prev_action):
+        """Compute reward based on LIDAR segments and previous action for left-wall following."""
+        # Extract segment values
+        front_dist = segments['front']
+        front_left_dist = segments['front_left']
+        rear_left_dist = segments['rear_left']
+        
+        # Relevent values
+        front_left_error = abs(front_left_dist - self.target_dist)
+        rear_left_error = abs(rear_left_dist - self.target_dist)
+        parallel_diff = abs(front_left_dist - rear_left_dist)
+
+        # --- Initialize penalties ---
+        collision_penalty = 0.0
+        wall_penalty = 0.0
+        parallel_penalty = 0.0
+        
+        # --- Compute base penalties ---
+        collision_penalty += 2 / max(front_dist, 0.05)  # Bad-->Good. 0.1m: 20, 0.5m: 4, 1m: 2
+        wall_penalty += 4*((1 + front_left_error)**2 - 1)
+        wall_penalty += 4*((1 + rear_left_error)**2 - 1)
+        parallel_penalty += 8*((1 + parallel_diff)**2 - 1)
+
+        # --- Action influence ---
+        if prev_action == 0:  # forward
+            collision_penalty *= (1.2 if front_dist < 0.5 else 0.7)
+        elif prev_action == 1:  # forward-left
+            wall_penalty *= 0.7 if front_left_dist > self.target_dist else 1.2
+            collision_penalty *= (1.1 if front_dist < 0.5 else 0.8)
+        elif prev_action == 2:  # forward-right
+            wall_penalty *= 0.7 if front_left_dist < self.target_dist else 1.2
+            collision_penalty *= (1.1 if front_dist < 0.5 else 0.8)
+        elif prev_action == 3:  # rotate-left
+            collision_penalty *= 0.7
+            parallel_penalty *= 0.6
+        elif prev_action == 4:  # rotate-right
+            collision_penalty *= 0.7
+            parallel_penalty *= 0.6  
+
+        # --- Combine penalties ---
+        reward = -(collision_penalty + wall_penalty + parallel_penalty)
+        return reward
+    
     def control_loop(self):
         """Called periodically to decide motion using the Q-table."""
         if self.lidar_ranges is None:
@@ -123,7 +174,7 @@ class QLearnTrainNode(Node):
         # 2. Convert segments to discrete state
         state = self.get_state(segments)
 
-        # 3. Look up action in Q-table
+        # 3. Select action (epsilon greedy)
         if state in self.q_table:
             if self.mode == 'train' and random.random() < self.epsilon:
                 action = random.randint(0, 4)  # Random action (0-4)
@@ -133,33 +184,44 @@ class QLearnTrainNode(Node):
             action = 0  # Default to forward
             self.get_logger().warn(f"State {state} not in Q-table")
 
-        # 4. Map discrete actions to motion commands
+        # 4. Execute action
         cmd = TwistStamped()
-        fwd_speed = 0.1
-        turn_speed = 0.25
-        curve_turn = 0.15
-
         if action == 0:          # Forward
-            cmd.twist.linear.x = fwd_speed
+            cmd.twist.linear.x = self.fwd_speed
             cmd.twist.angular.z = 0.0
         elif action == 1:        # Forward Left
-            cmd.twist.linear.x = fwd_speed
-            cmd.twist.angular.z = curve_turn
+            cmd.twist.linear.x = self.fwd_speed
+            cmd.twist.angular.z = self.turn_speed
         elif action == 2:        # Forward Right
-            cmd.twist.linear.x = fwd_speed
-            cmd.twist.angular.z = -curve_turn
+            cmd.twist.linear.x = self.fwd_speed
+            cmd.twist.angular.z = -self.turn_speed
         elif action == 3:        # Rotate Left
             cmd.twist.linear.x = 0.0
-            cmd.twist.angular.z = turn_speed
+            cmd.twist.angular.z = self.turn_speed
         elif action == 4:        # Rotate Right
             cmd.twist.linear.x = 0.0
-            cmd.twist.angular.z = -turn_speed
-
-        # 5. Publish the command
+            cmd.twist.angular.z = -self.turn_speed
+        
         self.cmd_vel_pub.publish(cmd)
-
-        # 6. Log for debugging
         self.get_logger().info(f"State: {state} -> Action: {self.actions[action]}")
+
+        # 5. Update Q-table (in train mode)
+        if self.mode == 'train':
+            # Compute reward based on current segments and previous action
+            if self.prev_action is not None:
+                reward = self.get_reward(segments, self.prev_action)
+            
+                # Update Q-table if we have a previous state/action
+                if self.prev_state is not None:
+                    next_state = state
+                    q_old = self.q_table[self.prev_state][self.prev_action]
+                    q_max = np.max(self.q_table[next_state])
+                    self.q_table[self.prev_state][self.prev_action] = q_old + self.alpha * (reward + self.gamma * q_max - q_old)
+                    self.get_logger().info(f"Q-update: State {self.prev_state}, Action {self.actions[self.prev_action]}, Reward {reward}, New Q {self.q_table[self.prev_state][self.prev_action]}")
+            
+            # Store current state/action for next iteration
+            self.prev_state = state
+            self.prev_action = action
 
 def main(args=None):
     rclpy.init(args=args)
