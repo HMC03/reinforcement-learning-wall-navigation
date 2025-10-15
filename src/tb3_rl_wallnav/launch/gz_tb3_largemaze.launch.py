@@ -7,6 +7,7 @@ from launch import LaunchDescription
 from launch.actions import AppendEnvironmentVariable, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 def generate_launch_description():
     # Paths to package directories
@@ -54,6 +55,17 @@ def generate_launch_description():
         os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'models')
     )
 
+    # Bridge SetEntityPose service from Gazebo to ROS
+    gz_service_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='gz_service_bridge',
+        output='screen',
+        arguments=[
+            '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean'
+        ],
+    )
+
     # Build and return launch description.
     ld = LaunchDescription()
     ld.add_action(gzserver_cmd)
@@ -61,4 +73,5 @@ def generate_launch_description():
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(spawn_turtlebot_cmd)
     ld.add_action(set_env_vars_resources)
+    ld.add_action(gz_service_bridge)
     return ld

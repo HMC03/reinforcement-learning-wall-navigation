@@ -56,6 +56,17 @@ def generate_launch_description():
         os.path.join(get_package_share_directory('turtlebot3_gazebo'), 'models')
     )
 
+    # Bridge SetEntityPose service from Gazebo to ROS
+    gz_service_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='gz_service_bridge',
+        output='screen',
+        arguments=[
+            '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean'
+        ],
+    )
+
     # Launch RViz with TurtleBot3 config.
     rviz_cmd = Node(
         package='rviz2',
@@ -72,5 +83,6 @@ def generate_launch_description():
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(spawn_turtlebot_cmd)
     ld.add_action(set_env_vars_resources)
+    ld.add_action(gz_service_bridge)
     ld.add_action(rviz_cmd)
     return ld
