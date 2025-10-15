@@ -37,6 +37,21 @@ class QLearnTrainNode(Node):
             4: "rotate_right",
         }
 
+        # Declare ROS parameters
+        self.declare_parameter('alpha', 0.1)  # Learning rate
+        self.declare_parameter('gamma', 0.99)  # Discount factor
+        self.declare_parameter('epsilon', 0.1)  # Exploration rate
+        self.declare_parameter('mode', 'train')  # Mode: train or run
+
+        # Get parameter values
+        self.alpha = self.get_parameter('alpha').get_parameter_value().double_value
+        self.gamma = self.get_parameter('gamma').get_parameter_value().double_value
+        self.epsilon = self.get_parameter('epsilon').get_parameter_value().double_value
+        self.mode = self.get_parameter('mode').get_parameter_value().string_value
+
+        # Log parameters for debugging
+        self.get_logger().info(f"Parameters: alpha={self.alpha}, gamma={self.gamma}, epsilon={self.epsilon}, mode={self.mode}")
+
         # Define q_table
         self.q_table = {}
         for state in itertools.product([0, 1, 2, 3], repeat=3):
