@@ -182,40 +182,61 @@ class QLearnTrainNode(Node):
         front_left_dist = segments['front_left']
         rear_left_dist = segments['rear_left']
         
-        # Relevent values
-        front_left_error = abs(front_left_dist - self.target_dist)
-        rear_left_error = abs(rear_left_dist - self.target_dist)
-        parallel_diff = abs(front_left_dist - rear_left_dist)
+        # Initialize reward
+        reward = 0
 
-        # --- Initialize penalties ---
-        collision_penalty = 0.0
-        wall_penalty = 0.0
-        parallel_penalty = 0.0
+        # --- Basic Rewards ---
+        if prev_action < 3: # Moving forward = Good
+            reward += 2
+            if prev_action == 0: # Pure forward = Better
+                reward += 1
+        if front_dist > 0.6: # Open space in front = Good
+            reward += 5
+        if 0.4 < front_left_dist < 0.6: # Front left is at ideal distance = Good
+            reward += 5
+        if 0.4 < rear_left_dist < 0.6: # Rear left is at ideal distance = Good
+            reward += 5
+        if abs(front_left_dist - rear_left_dist) < 0.2:  # Parallel to wall = Good
+            reward += 2
         
-        # --- Compute base penalties ---
-        collision_penalty += 2 / max(front_dist, 0.05)  # Bad-->Good. 0.1m: 20, 0.5m: 4, 1m: 2
-        wall_penalty += 4*((1 + front_left_error)**2 - 1)
-        wall_penalty += 4*((1 + rear_left_error)**2 - 1)
-        parallel_penalty += 8*((1 + parallel_diff)**2 - 1)
+        # --- Basic Penalties ---
+        if front_dist < 0.4: # Near front collision = Bad
+            reward -= 2
+        if front_left_dist > 1: # Front left is lost = Bad
+            reward -= 1
+        if rear_left_dist > 1: # Rear left is lost = Bad
+            reward -= 1
+        if front_left_dist < 0.2: # Near front left collision = Bad
+            reward -= 1
+        if rear_left_dist < 0.2: # Near rear left collision = Bad
+            reward -= 1
 
-        # --- Action influence ---
-        if prev_action == 0:  # forward
-            collision_penalty *= (1.2 if front_dist < 0.5 else 0.7)
-        elif prev_action == 1:  # forward-left
-            wall_penalty *= 0.7 if front_left_dist > self.target_dist else 1.2
-            collision_penalty *= (1.1 if front_dist < 0.5 else 0.8)
-        elif prev_action == 2:  # forward-right
-            wall_penalty *= 0.7 if front_left_dist < self.target_dist else 1.2
-            collision_penalty *= (1.1 if front_dist < 0.5 else 0.8)
-        elif prev_action == 3:  # rotate-left
-            collision_penalty *= 0.7
-            parallel_penalty *= 0.6
-        elif prev_action == 4:  # rotate-right
-            collision_penalty *= 0.7
-            parallel_penalty *= 0.6  
+        # Action-specific adjustments
+        if prev_action == 1:  # Forward-left
+            if front_left_dist > 0.6:  # Moving toward wall when too far = Good
+                reward += 1.0
+            elif front_left_dist < 0.4:  # Moving toward wall when too close = Bad
+                reward -= 1.0
+        if prev_action == 2:  # Forward-right
+            if front_left_dist < 0.4:  # Moving away from wall when too close = Good
+                reward += 1.0
+            elif front_left_dist > 0.6:  # Moving away from wall when too far = Bad
+                reward -= 1.0
+        if prev_action in [3, 4]:  # Rotate left/right
+            if parallel_error > 0.5:  # Correcting misalignment = Good
+                reward += 1.0
 
-        # --- Combine penalties ---
-        reward = -(collision_penalty + wall_penalty + parallel_penalty)
+        # --- Continuous Adjustments ---
+        # Fine-tune wall distance (target: 0.5m)
+        front_left_error = abs(front_left_dist - 0.5)
+        rear_left_error = abs(rear_left_dist - 0.5)
+        reward -= 2.0 * front_left_error  # Penalize deviation from 0.5m
+        reward -= 2.0 * rear_left_error   # Penalize deviation from 0.5m
+
+        # Encourage parallel alignment
+        parallel_error = abs(front_left_dist - rear_left_dist)
+        reward -= 2.0 * parallel_error  # Penalize misalignment
+
         return reward
     
     def is_terminal_state(self, segments, state):
