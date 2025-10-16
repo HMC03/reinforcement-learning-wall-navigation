@@ -48,7 +48,7 @@ class QLearnTrainNode(Node):
 
         # Action parameters
         self.target_dist = 0.5
-        self.collision_threshold = 0.2
+        self.collision_threshold = 0.1
         self.fwd_speed = 0.1
         self.turn_speed = 0.2
         self.prev_state = None
@@ -64,10 +64,14 @@ class QLearnTrainNode(Node):
         self.avg_rewards = []
 
         # Declare ROS parameters
-        self.declare_parameter('alpha', 0.1)  # Learning rate
+        self.declare_parameter('alpha', 0.01)  # Learning rate
         self.declare_parameter('gamma', 0.99)  # Discount factor
-        self.declare_parameter('epsilon', 0.1)  # Exploration rate
+        self.declare_parameter('epsilon', 0.3)  # Exploration rate
         self.declare_parameter('mode', 'train')  # Mode: train or run
+
+        # Epsilon
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.995
 
         # Get parameter values
         self.alpha = self.get_parameter('alpha').get_parameter_value().double_value
@@ -197,59 +201,68 @@ class QLearnTrainNode(Node):
         # Initialize reward
         reward = 0
 
-        # --- Basic Rewards ---
-        if prev_action < 3: # Moving forward = Good
-            reward += 2
-            if prev_action == 0: # Pure forward = Better
-                reward += 1
-        if front_dist > 0.6: # Open space in front = Good
-            reward += 5
-        if 0.4 < front_left_dist < 0.6: # Front left is at ideal distance = Good
-            reward += 5
-        if 0.4 < rear_left_dist < 0.6: # Rear left is at ideal distance = Good
-            reward += 5
-        if abs(front_left_dist - rear_left_dist) < 0.2:  # Parallel to wall = Good
-            reward += 2
-        
-        # --- Basic Penalties ---
-        if front_dist < 0.4: # Near front collision = Bad
-            reward -= 2
-        if front_left_dist > 1: # Front left is lost = Bad
-            reward -= 1
-        if rear_left_dist > 1: # Rear left is lost = Bad
-            reward -= 1
-        if front_left_dist < 0.2: # Near front left collision = Bad
-            reward -= 1
-        if rear_left_dist < 0.2: # Near rear left collision = Bad
-            reward -= 1
+        # --- State-Based Rewards (Primary Focus) ---
+        # Reward ideal wall distance (0.45–0.55m for precision)
+        if 0.45 <= front_left_dist <= 0.55:
+            reward += 5.0
+        elif 0.4 <= front_left_dist <= 0.6:
+            reward += 2.5  # Graduated reward for near-ideal distance
+        if 0.45 <= rear_left_dist <= 0.55:
+            reward += 5.0
+        elif 0.4 <= rear_left_dist <= 0.6:
+            reward += 2.5
+        # Reward parallelism with tighter thresholds
+        parallel_error = abs(front_left_dist - rear_left_dist)
+        if parallel_error < 0.08:
+            reward += 4.0
+        elif parallel_error < 0.15:
+            reward += 2.0
+        # Reward clear front with graduated rewards
+        if front_dist > 1.2:
+            reward += 4.0
+        elif front_dist > 0.7:
+            reward += 2.0
+        # Bonus for corner navigation (front clear, wall close on left)
+        if front_dist > 0.7 and 0.4 <= front_left_dist <= 0.6 and rear_left_dist > 0.6:
+            reward += 3.0  # Encourage turning toward wall (e.g., corners)
 
-        # --- Continuous Adjustments ---
-        # Fine-tune wall distance (target: 0.5m)
+        # --- State-Based Penalties ---
+        # Exponential penalty for collision risk
+        if front_dist < 0.4:
+            reward -= 12.0 * (0.4 / max(front_dist, 0.01))  # Stronger penalty closer to obstacle
+        # Penalty for being lost (far from wall)
+        if front_left_dist > 1.0 and rear_left_dist > 1.0:
+            reward -= 6.0 + 1.5 * max(front_left_dist - 1.0, rear_left_dist - 1.0)
+        # Penalty for misalignment
+        if parallel_error > 0.25:
+            reward -= 4.0
+        elif parallel_error > 0.15:
+            reward -= 2.0
+
+        # --- Action-Based Penalties (Minimal and Targeted) ---
+        if prev_action == 0 and front_dist < 0.5:  # Penalize Forward near obstacles
+            reward -= 6.0 * (0.5 / max(front_dist, 0.01))
+        if prev_action in [1, 2] and front_dist < 0.4:  # Penalize Forward_Left/Right near obstacles
+            reward -= 4.0
+        if prev_action in [3, 4] and parallel_error < 0.1:  # Penalize rotations when well-aligned
+            reward -= 2.5
+        # Encourage forward progress in safe states
+        if prev_action < 3 and front_dist > 0.7 and 0.4 <= front_left_dist <= 0.6:
+            reward += 1.5
+
+        # --- Continuous Shaping ---
         front_left_error = abs(front_left_dist - 0.5)
         rear_left_error = abs(rear_left_dist - 0.5)
-        reward -= 2.0 * front_left_error  # Penalize deviation from 0.5m
-        reward -= 2.0 * rear_left_error   # Penalize deviation from 0.5m
+        reward -= 2.0 * front_left_error ** 1.5  # Non-linear penalty for precision
+        reward -= 2.0 * rear_left_error ** 1.5
+        reward -= 1.5 * parallel_error ** 1.5  # Stronger alignment pull
 
-        # Encourage parallel alignment
-        parallel_error = abs(front_left_dist - rear_left_dist)
-        reward -= 2.0 * parallel_error  # Penalize misalignment
+        # --- Efficiency Penalty ---
+        if prev_action in [3, 4] and front_dist > 0.7 and parallel_error < 0.15:
+            reward -= 1.0  # Discourage over-rotation in good states
 
-        # --- Action-specific adjustments ---
-        if prev_action == 1:  # Forward-left
-            if front_left_dist > 0.6:  # Moving toward wall when too far = Good
-                reward += 1.0
-            elif front_left_dist < 0.4:  # Moving toward wall when too close = Bad
-                reward -= 1.0
-        if prev_action == 2:  # Forward-right
-            if front_left_dist < 0.4:  # Moving away from wall when too close = Good
-                reward += 1.0
-            elif front_left_dist > 0.6:  # Moving away from wall when too far = Bad
-                reward -= 1.0
-        if prev_action in [3, 4]:  # Rotate left/right
-            if parallel_error > 0.5:  # Correcting misalignment = Good
-                reward += 1.0
-
-        return reward
+        # Clip rewards for numerical stability
+        return np.clip(reward, -15.0, 15.0)
     
     def is_terminal_state(self, segments, state):
         """Check if the current state is terminal."""
@@ -391,13 +404,14 @@ class QLearnTrainNode(Node):
                     next_state = state
                     q_old = self.q_table[self.prev_state][self.prev_action]
                     q_max = np.max(self.q_table[next_state])
-                    self.q_table[self.prev_state][self.prev_action] = q_old + self.alpha * (reward + self.gamma * q_max - q_old)
+                    self.q_table[self.prev_state][self.prev_action] = np.clip(q_old + self.alpha * (reward + self.gamma * q_max - q_old), -1000.0, 1000.0)
                     self.get_logger().info(f"Q-update: State {self.prev_state}, Action {self.actions[self.prev_action]}, Reward {reward}, New Q {self.q_table[self.prev_state][self.prev_action]}")
             
         # Store current state/action for next iteration
         self.prev_state = state
         self.prev_action = action
         self.episode_steps += 1
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         
         # Check for terminal state & save average reward
         if self.mode == 'train' and self.is_terminal_state(segments, state):
