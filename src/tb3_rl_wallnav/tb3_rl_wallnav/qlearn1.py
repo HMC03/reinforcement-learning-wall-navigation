@@ -14,7 +14,7 @@ import time
 
 class QLearnTrainNode(Node):
     def __init__(self):
-        super().__init__('manual_qtable_node')
+        super().__init__('qlearn1_node')
 
         # Publisher for robot velocity
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
@@ -105,7 +105,7 @@ class QLearnTrainNode(Node):
         self.get_logger().info(f"Reward dir: {self.reward_dir}")
 
         # Load Q-table if it exists
-        self.q_table_file = os.path.join(self.qtable_dir, 'qlearn_qtable.npy')
+        self.q_table_file = os.path.join(self.qtable_dir, 'qlearn1_qtable.npy')
         if os.path.exists(self.q_table_file):
             loaded = np.load(self.q_table_file, allow_pickle=True).item()
             self.q_table.update(loaded)
@@ -115,7 +115,7 @@ class QLearnTrainNode(Node):
         self.get_logger().info(f"Q-table size: {len(self.q_table)}, Sample: {self.q_table[(0,0,0)]}")
 
         # Load last episode from rewards CSV
-        self.reward_file = os.path.join(self.reward_dir, 'qlearn_rewards.csv')
+        self.reward_file = os.path.join(self.reward_dir, 'qlearn1_rewards.csv')
         if os.path.exists(self.reward_file):
             with open(self.reward_file, 'r') as f:
                 reader = csv.reader(f)
