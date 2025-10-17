@@ -205,9 +205,9 @@ class QLearnTrainNode(Node):
         prev_front_state, prev_front_left_state, prev_left_state, prev_rear_left_state = prev_state
 
         # Desired categories for effective left-wall following
-        desired_front_state = 4       # Far
+        desired_front_state = 3       # Far
         desired_front_left_state = 2  # Medium
-        desired_left_state = 2        # Medium
+        desired_left_state = 1        # Close
         desired_rear_left_state = 2   # Medium
 
         # Initialize total reward
@@ -221,7 +221,7 @@ class QLearnTrainNode(Node):
 
         # 2. Potential-based reward: Negative reward proportional to deviation from desired states in the current observation
         potential_reward = 0.0
-        potential_reward += -abs(curr_front_state - desired_front_state) * 2.0
+        potential_reward += -abs(curr_front_state - desired_front_state) * 3.0
         potential_reward += -abs(curr_front_left_state - desired_front_left_state) * 5.0
         potential_reward += -abs(curr_left_state - desired_left_state) * 10.0
         potential_reward += -abs(curr_rear_left_state - desired_rear_left_state) * 5.0
@@ -238,7 +238,7 @@ class QLearnTrainNode(Node):
             prev_deviation = abs(prev_state_val - desired_state_val)
             curr_deviation = abs(curr_state_val - desired_state_val)
             improvement = prev_deviation - curr_deviation
-            shaping_reward += improvement * 5.0
+            shaping_reward += improvement * 7.0
         total_reward += shaping_reward
 
         # 4. Progress incentive: Encourage forward-moving actions to promote exploration and prevent excessive spinning
@@ -249,7 +249,7 @@ class QLearnTrainNode(Node):
 
         # 5. Wall alignment bonus: Extra reward if front_left, left, and rear_left states match, indicating parallel alignment
         if curr_front_left_state == curr_left_state == curr_rear_left_state:
-            total_reward += 5.0
+            total_reward += 7.0
 
         return total_reward
     
