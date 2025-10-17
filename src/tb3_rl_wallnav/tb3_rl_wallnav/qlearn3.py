@@ -153,9 +153,9 @@ class QLearnTrainNode(Node):
 
         lidar_segments = {
             "front":       (avg_in_range(0, 30) + avg_in_range(330, 360)) / 2,
-            "front_left":  avg_in_range(30, 60),
-            "left":        avg_in_range(60, 120),
-            "rear_left":   avg_in_range(120, 150),
+            "front_left":  avg_in_range(50, 70),
+            "left":        avg_in_range(70, 110),
+            "rear_left":   avg_in_range(110, 130),
         }
 
         return lidar_segments
@@ -266,7 +266,7 @@ class QLearnTrainNode(Node):
         # Lost state (4, 4, 4, 4) check
         if state == (4, 4, 4, 4):
             self.lost_count += 1
-            if self.lost_count >= 20:
+            if self.lost_count >= 10:
                 self.get_logger().info(f"Lost for 20 steps! Episode {self.episode} over")
                 return True
         else:
