@@ -51,7 +51,7 @@ class QLearnTrainNode(Node):
             {'x_pose': 0.5, 'y_pose': 1.5}
         ]
         # Reset Parameters
-        self.collision_threshold = 0.15
+        self.collision_threshold = 0.2
         self.lost_count = 0
 
         # Q-Learn Control loop (5Hz)
@@ -206,6 +206,9 @@ class QLearnTrainNode(Node):
         """Check if the current state is terminal."""
         # Collision check
         if segments['front'] < self.collision_threshold:
+            self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
+            return True
+        elif segments['front_left'] < self.collision_threshold:
             self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
             return True
         
