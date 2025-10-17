@@ -58,12 +58,13 @@ class QLearnTrainNode(Node):
         self.timer = self.create_timer(0.2, self.control_loop)
         
         # Declare ROS parameters
+        self.declare_parameter('epsilon', 1.0)  # Exploration rate
+        self.declare_parameter('mode', 'train')  # Mode: train or run
         self.alpha = 0.01 # Learning rate
         self.gamma = 0.99 # Discount factor
-        self.epsilon = 1 # Exploration rate
         self.epsilon_min = .05 # Minimum exploration rate
         self.epsilon_decay = .98 # Exploration decay rate
-        self.declare_parameter('mode', 'train')  # Mode: train or run
+        self.epsilon = self.get_parameter('epsilon').get_parameter_value().double_value
         self.mode = self.get_parameter('mode').get_parameter_value().string_value
         
         self.get_logger().info(f"Parameters: alpha={self.alpha}, gamma={self.gamma}, epsilon={self.epsilon}, mode={self.mode}") # Log parameters for debugging
