@@ -54,8 +54,8 @@ class QLearnTrainNode(Node):
         self.collision_threshold = 0.2
         self.lost_count = 0
 
-        # Q-Learn Control loop (5Hz)
-        self.timer = self.create_timer(0.2, self.control_loop)
+        # Q-Learn Control loop (2Hz)
+        self.timer = self.create_timer(0.5, self.control_loop)
         
         # Declare ROS parameters
         self.declare_parameter('epsilon', 1.0)  # Exploration rate
@@ -118,7 +118,7 @@ class QLearnTrainNode(Node):
 
         # Initialize Episode Variables
         self.max_episodes = 200
-        self.max_steps = 300
+        self.max_steps = 200
         self.episode_steps = 0
         self.episode_reward = 0.0
         self.avg_rewards = []
