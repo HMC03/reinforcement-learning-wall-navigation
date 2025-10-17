@@ -33,7 +33,8 @@ setup(
         'console_scripts': [
             'lidar_debug = tb3_rl_wallnav.lidar_debug:main',
             'manual_qtable = tb3_rl_wallnav.manual_qtable:main',
-            'qlearn = tb3_rl_wallnav.qlearn:main',
+            'qlearn1 = tb3_rl_wallnav.qlearn1:main',
+            'qlearn2 = tb3_rl_wallnav.qlearn2:main',
         ],
     },
 )
