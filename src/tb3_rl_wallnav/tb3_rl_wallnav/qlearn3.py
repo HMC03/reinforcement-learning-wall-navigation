@@ -63,7 +63,7 @@ class QLearnTrainNode(Node):
         self.alpha = 0.01 # Learning rate
         self.gamma = 0.99 # Discount factor
         self.epsilon_min = .05 # Minimum exploration rate
-        self.epsilon_decay = .98 # Exploration decay rate
+        self.epsilon_decay = .97 # Exploration decay rate
         self.epsilon = self.get_parameter('epsilon').get_parameter_value().double_value
         self.mode = self.get_parameter('mode').get_parameter_value().string_value
         
@@ -181,54 +181,77 @@ class QLearnTrainNode(Node):
             categorize(segments['rear_left'])
         )
 
-    def get_reward(self, segments, state, action):
+    def get_reward(self, segments, prev_state, prev_action):
         """Compute reward based on LIDAR segments and previous action for left-wall following."""
-        # --- 1. Terminal penalties ---
-        # If a collision occurs, a reset follows, so apply a strong negative reward.
-        if segments['front'] < self.collision_threshold or segments['front_left'] < self.collision_threshold:
-            return -100.0
-
-        # If robot is "lost" (no walls detected for too long)
-        if state == (4, 4, 4, 4):
-            return -5.0
-
-        # --- 2. Base reward ---
-        reward = 0.0
-
-        # --- 3. Encourage forward motion when safe ---
-        if action == 0:  # Forward
-            if state[0] >= 3:  # Front is clear
-                reward += 3.0
-            elif state[0] == 2:
-                reward += 1.5
+        def categorize(dist):
+            if dist < 0.3:
+                return 0  # Very Close
+            elif dist < 0.6:
+                return 1  # Close
+            elif dist < 0.9:
+                return 2  # Medium
+            elif dist < 1.2:
+                return 3  # Far
             else:
-                reward -= 2.0  # too close, risky
+                return 4  # Very Far
 
-        # --- 4. Wall-following behavior (hugging left wall but not colliding) ---
-        # Ideal left distances: around 0.6–0.9 m → categories 1–2
-        if 1 <= state[2] <= 2:
-            reward += 1.5  # maintaining left-wall distance
-        elif state[2] == 0:
-            reward -= 3.0  # too close to left wall
-        elif state[2] >= 3:
-            reward -= 1.0  # drifting away from left wall
+        # Compute categories for the new observation (after action)
+        curr_front_state = categorize(segments['front'])
+        curr_front_left_state = categorize(segments['front_left'])
+        curr_left_state = categorize(segments['left'])
+        curr_rear_left_state = categorize(segments['rear_left'])
 
-        # --- 5. Penalize unnecessary rotations (no forward progress) ---
-        if action in [3, 4]:  # rotate left/right
-            reward -= 0.5
+        # Unpack categories from the previous state (before action)
+        prev_front_state, prev_front_left_state, prev_left_state, prev_rear_left_state = prev_state
 
-        # --- 6. Smoothness bonus: discourage sharp steering when not needed ---
-        if action in [1, 2]:  # forward left/right
-            # if path ahead is clear, no need to steer — small penalty
-            if state[0] >= 3:
-                reward -= 0.5
-            else:
-                reward += 0.5  # if obstacle ahead, turning is smart
+        # Desired categories for effective left-wall following
+        desired_front_state = 4       # Far
+        desired_front_left_state = 2  # Medium
+        desired_left_state = 2        # Medium
+        desired_rear_left_state = 2   # Medium
 
-        # --- 7. Small step reward to encourage exploration longevity ---
-        reward += 0.1
+        # Initialize total reward
+        total_reward = 0.0
 
-        return float(np.clip(reward, -100.0, 5.0))
+        # 1. Collision penalty: Large negative reward if a collision is detected in the new segments
+        if segments['front'] < self.collision_threshold:
+            total_reward -= 100.0
+        if segments['front_left'] < self.collision_threshold:
+            total_reward -= 100.0
+
+        # 2. Potential-based reward: Negative reward proportional to deviation from desired states in the current observation
+        potential_reward = 0.0
+        potential_reward += -abs(curr_front_state - desired_front_state) * 2.0
+        potential_reward += -abs(curr_front_left_state - desired_front_left_state) * 5.0
+        potential_reward += -abs(curr_left_state - desired_left_state) * 10.0
+        potential_reward += -abs(curr_rear_left_state - desired_rear_left_state) * 5.0
+        total_reward += potential_reward
+
+        # 3. Shaping reward: Positive reward for improvements in state closeness to desired values compared to previous state
+        shaping_reward = 0.0
+        for prev_state_val, curr_state_val, desired_state_val in [
+            (prev_front_state, curr_front_state, desired_front_state),
+            (prev_front_left_state, curr_front_left_state, desired_front_left_state),
+            (prev_left_state, curr_left_state, desired_left_state),
+            (prev_rear_left_state, curr_rear_left_state, desired_rear_left_state)
+        ]:
+            prev_deviation = abs(prev_state_val - desired_state_val)
+            curr_deviation = abs(curr_state_val - desired_state_val)
+            improvement = prev_deviation - curr_deviation
+            shaping_reward += improvement * 5.0
+        total_reward += shaping_reward
+
+        # 4. Progress incentive: Encourage forward-moving actions to promote exploration and prevent excessive spinning
+        if prev_action in [0, 1, 2]:
+            total_reward += 2.0
+        else:
+            total_reward -= 2.0
+
+        # 5. Wall alignment bonus: Extra reward if front_left, left, and rear_left states match, indicating parallel alignment
+        if curr_front_left_state == curr_left_state == curr_rear_left_state:
+            total_reward += 5.0
+
+        return total_reward
     
     def is_terminal_state(self, segments, state):
         """Check if the current state is terminal."""
