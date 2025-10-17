@@ -288,7 +288,7 @@ class QLearnTrainNode(Node):
             return  
 
         # 1. Terminate if max episodes reached
-        if self.episode >= self.max_episodes:
+        if self.episode >= self.max_episodes and self.mode == 'train':
             self.get_logger().info(f"Completed {self.max_episodes} episodes. Stopping training.")
             self.save_q_table()
             self.destroy_node()
