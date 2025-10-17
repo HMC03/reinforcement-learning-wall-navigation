@@ -22,10 +22,7 @@ def convert_qtable_to_txt(input_npy, output_txt):
 
         # Sort states for consistent ordering
         states = sorted(q_table.keys())
-
-        # Verify expected number of states (4^3 = 64)
-        if len(states) != 64:
-            print(f"Warning: Q-table has {len(states)} states, expected 64.")
+        print(f"Q-table has {len(states)} states")
 
         # Write to text file
         with open(output_path, 'w') as f:
