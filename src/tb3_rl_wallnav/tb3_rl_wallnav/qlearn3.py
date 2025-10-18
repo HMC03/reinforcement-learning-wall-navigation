@@ -27,7 +27,8 @@ class QLearnTrainNode(Node):
             4: "rotate_right",
         }
         # Action parameters
-        self.target_dist = 0.5
+        self.target_left_dist = 0.5
+        self.target_angle_dist = 0.6
         self.fwd_speed = 0.15
         self.turn_speed = 0.3
 
@@ -52,8 +53,8 @@ class QLearnTrainNode(Node):
         ]
         self.collision_threshold = 0.2
 
-        # Q-Learn Control loop (2Hz)
-        self.timer = self.create_timer(0.5, self.control_loop)
+        # Q-Learn Control loop (5Hz)
+        self.timer = self.create_timer(0.2, self.control_loop)
         
         # Declare ROS parameters
         self.declare_parameter('epsilon', 1.0)  # Exploration rate
@@ -150,7 +151,7 @@ class QLearnTrainNode(Node):
             return min(max(avg, 0.0), 3.5)
 
         lidar_segments = {
-            "front":       (avg_in_range(0, 30) + avg_in_range(330, 360)) / 2,
+            "front":       (avg_in_range(0, 40) + avg_in_range(320, 360)) / 2,
             "front_left":  avg_in_range(50, 70),
             "left":        avg_in_range(70, 110),
             "rear_left":   avg_in_range(110, 130),
@@ -188,30 +189,24 @@ class QLearnTrainNode(Node):
         left = segments['left']
         rear_left = segments['rear_left']
         
-        left_error = abs(left - self.target_dist)
-        parallel_error = abs(front_left - rear_left)
+        front_left_error = abs(front_left - self.target_angle_dist)
+        left_error = abs(left - self.target_left_dist)
+        rear_left_error = abs(rear_left - self.target_angle_dist)
 
         # Initialize Reward
         reward = 0.0
         
-        # Reward Goal State (large front dist + low left error + low parallel_error)
-        if front > 0.5:
-            if left_error < 0.1: # Reward Low left_error
-                reward = 1
-            elif left_error < 0.2:
-                reward += 0.5
-        
-            if parallel_error < 0.2: # Reward Low parallel_error
-                reward += 0.05
+        # Reward Goal State (Moving Forward + large front dist + low left errors)
+        if front > 0.5 and (left_error < 0.1) and prev_action in [0,1,2]:
+            if front_left_error < 0.15 and rear_left_error < 0.15:
+                reward += 1
+            elif front_left_error < 0.15 or rear_left_error < 0.15:
+                reward += .5
         else:
                 reward -= 0.1 # Living Penalty
 
-        # Penalize unnecessary rotation
-        if prev_action in [3, 4]:
-            reward -= 0.01
-
         # Penalize Collision
-        if front < self.collision_threshold or front_left < self.collision_threshold:
+        if front < self.collision_threshold:
             reward -= 100
 
         # Penalize Getting Lost
@@ -226,13 +221,10 @@ class QLearnTrainNode(Node):
         if segments['front'] < self.collision_threshold:
             self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
             return True
-        elif segments['front_left'] < self.collision_threshold:
-            self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
-            return True
         
         # Lost state (4, 4, 4, 4) check
         if state == (4, 4, 4, 4):
-            self.get_logger().info(f"Lost for 20 steps! Episode {self.episode} over")
+            self.get_logger().info(f"Lost! Episode {self.episode} over")
             return True
 
         # Step limit check
