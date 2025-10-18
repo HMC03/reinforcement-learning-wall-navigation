@@ -50,9 +50,7 @@ class QLearnTrainNode(Node):
             {'x_pose': -2.0, 'y_pose': -0.5},
             {'x_pose': 0.5, 'y_pose': 1.5}
         ]
-        # Reset Parameters
         self.collision_threshold = 0.2
-        self.lost_count = 0
 
         # Q-Learn Control loop (2Hz)
         self.timer = self.create_timer(0.5, self.control_loop)
@@ -60,6 +58,7 @@ class QLearnTrainNode(Node):
         # Declare ROS parameters
         self.declare_parameter('epsilon', 1.0)  # Exploration rate
         self.declare_parameter('mode', 'train')  # Mode: train or run
+
         self.alpha = 0.1 # Learning rate
         self.gamma = 0.99 # Discount factor
         self.epsilon_min = .05 # Minimum exploration rate
@@ -206,7 +205,7 @@ class QLearnTrainNode(Node):
                 reward += 0.05
         else:
                 reward -= 0.1 # Living Penalty
-                
+
         # Penalize unnecessary rotation
         if prev_action in [3, 4]:
             reward -= 0.01
@@ -233,12 +232,8 @@ class QLearnTrainNode(Node):
         
         # Lost state (4, 4, 4, 4) check
         if state == (4, 4, 4, 4):
-            self.lost_count += 1
-            if self.lost_count >= 5:
-                self.get_logger().info(f"Lost for 20 steps! Episode {self.episode} over")
-                return True
-        else:
-            self.lost_count = 0  # Reset if not in lost state
+            self.get_logger().info(f"Lost for 20 steps! Episode {self.episode} over")
+            return True
 
         # Step limit check
         if self.episode_steps >= self.max_steps:
