@@ -44,15 +44,13 @@ ros2 launch tb3_rl_wallnav gz_rviz_tb3_largemaze.launch.py
 
 Run reinforcement learning scripts:
 ```bash
-ros2 run tb3_rl_wallnav <script_name>.py
+ros2 run tb3_rl_wallnav <script_name>.py --ros-args -p mode:=run
 ```
 
 Available scripts:
+* qlearn3.py
+* sarsa3.py
 * manual_qtable.py
-* q_td_train.py – Q-Learning training
-* q_td_run.py – Q-Learning testing
-* sarsa_train.py – SARSA training
-* sarsa_run.py – SARSA testing
 
 📈 Results (To Be Added)
 
