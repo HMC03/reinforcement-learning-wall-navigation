@@ -150,7 +150,7 @@ class SARSATrainNode(Node):
             return np.percentile(ranges[mask], 10)
 
         lidar_segments = {
-            "front":       min(min10_in_range(0, 40), min10_in_range(320, 360)),
+            "front":       min(min10_in_range(0, 20), min10_in_range(340, 360)),
             "front_left":  min10_in_range(50, 70),
             "left":        min10_in_range(70, 110),
             "rear_left":   min10_in_range(110, 130),
@@ -221,8 +221,8 @@ class SARSATrainNode(Node):
             self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
             return True
         
-        # Lost state (4, 4, 4, 4) check
-        if state == (4, 4, 4, 4):
+        # Lost state (x, 4, 4, 4) check
+        if state[1] == 4 and state[2] == 4 and state[3] == 4:
             self.get_logger().info(f"Lost! Episode {self.episode} over")
             return True
 
