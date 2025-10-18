@@ -27,7 +27,8 @@ class SARSATrainNode(Node):
             4: "rotate_right",
         }
         # Action parameters
-        self.target_dist = 0.75
+        self.target_left_dist = 0.5
+        self.target_angle_dist = 0.6
         self.fwd_speed = 0.15
         self.turn_speed = 0.3
 
@@ -50,17 +51,16 @@ class SARSATrainNode(Node):
             {'x_pose': -2.0, 'y_pose': -0.5},
             {'x_pose': 0.5, 'y_pose': 1.5}
         ]
-        # Reset Parameters
         self.collision_threshold = 0.2
-        self.lost_count = 0
 
-        # Q-Learn Control loop (2Hz)
-        self.timer = self.create_timer(0.5, self.control_loop)
+        # Q-Learn Control loop (5Hz)
+        self.timer = self.create_timer(0.2, self.control_loop)
         
         # Declare ROS parameters
         self.declare_parameter('epsilon', 1.0)  # Exploration rate
         self.declare_parameter('mode', 'train')  # Mode: train or run
-        self.alpha = 0.01 # Learning rate
+
+        self.alpha = 0.1 # Learning rate
         self.gamma = 0.99 # Discount factor
         self.epsilon_min = .05 # Minimum exploration rate
         self.epsilon_decay = .97 # Exploration decay rate
@@ -114,14 +114,13 @@ class SARSATrainNode(Node):
             self.get_logger().info(f"Reward file {self.reward_file} not found, starting new file")
             with open(self.reward_file, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Episode', 'Average_Reward'])
+                writer.writerow(['Episode', 'Total_Reward'])
 
         # Initialize Episode Variables
         self.max_episodes = 200
         self.max_steps = 200
         self.episode_steps = 0
         self.episode_reward = 0.0
-        self.avg_rewards = []
         self.prev_state = None
         self.prev_action = None
 
@@ -152,7 +151,7 @@ class SARSATrainNode(Node):
             return min(max(avg, 0.0), 3.5)
 
         lidar_segments = {
-            "front":       (avg_in_range(0, 30) + avg_in_range(330, 360)) / 2,
+            "front":       (avg_in_range(0, 40) + avg_in_range(320, 360)) / 2,
             "front_left":  avg_in_range(50, 70),
             "left":        avg_in_range(70, 110),
             "rear_left":   avg_in_range(110, 130),
@@ -181,77 +180,40 @@ class SARSATrainNode(Node):
             categorize(segments['rear_left'])
         )
 
-    def get_reward(self, segments, prev_state, prev_action):
+    def get_reward(self, segments, prev_action):
         """Compute reward based on LIDAR segments and previous action for left-wall following."""
-        def categorize(dist):
-            if dist < 0.3:
-                return 0  # Very Close
-            elif dist < 0.6:
-                return 1  # Close
-            elif dist < 0.9:
-                return 2  # Medium
-            elif dist < 1.2:
-                return 3  # Far
-            else:
-                return 4  # Very Far
-
+        
         # Compute categories for the new observation (after action)
-        curr_front_state = categorize(segments['front'])
-        curr_front_left_state = categorize(segments['front_left'])
-        curr_left_state = categorize(segments['left'])
-        curr_rear_left_state = categorize(segments['rear_left'])
+        front = segments['front']
+        front_left = segments['front_left']
+        left = segments['left']
+        rear_left = segments['rear_left']
+        
+        front_left_error = abs(front_left - self.target_angle_dist)
+        left_error = abs(left - self.target_left_dist)
+        rear_left_error = abs(rear_left - self.target_angle_dist)
 
-        # Unpack categories from the previous state (before action)
-        prev_front_state, prev_front_left_state, prev_left_state, prev_rear_left_state = prev_state
-
-        # Desired categories for effective left-wall following
-        desired_front_state = 3       # Far
-        desired_front_left_state = 2  # Medium
-        desired_left_state = 1        # Close
-        desired_rear_left_state = 2   # Medium
-
-        # Initialize total reward
-        total_reward = 0.0
-
-        # 1. Collision penalty: Large negative reward if a collision is detected in the new segments
-        if segments['front'] < self.collision_threshold:
-            total_reward -= 100.0
-        if segments['front_left'] < self.collision_threshold:
-            total_reward -= 100.0
-
-        # 2. Potential-based reward: Negative reward proportional to deviation from desired states in the current observation
-        potential_reward = 0.0
-        potential_reward += -abs(curr_front_state - desired_front_state) * 3.0
-        potential_reward += -abs(curr_front_left_state - desired_front_left_state) * 5.0
-        potential_reward += -abs(curr_left_state - desired_left_state) * 10.0
-        potential_reward += -abs(curr_rear_left_state - desired_rear_left_state) * 5.0
-        total_reward += potential_reward
-
-        # 3. Shaping reward: Positive reward for improvements in state closeness to desired values compared to previous state
-        shaping_reward = 0.0
-        for prev_state_val, curr_state_val, desired_state_val in [
-            (prev_front_state, curr_front_state, desired_front_state),
-            (prev_front_left_state, curr_front_left_state, desired_front_left_state),
-            (prev_left_state, curr_left_state, desired_left_state),
-            (prev_rear_left_state, curr_rear_left_state, desired_rear_left_state)
-        ]:
-            prev_deviation = abs(prev_state_val - desired_state_val)
-            curr_deviation = abs(curr_state_val - desired_state_val)
-            improvement = prev_deviation - curr_deviation
-            shaping_reward += improvement * 7.0
-        total_reward += shaping_reward
-
-        # 4. Progress incentive: Encourage forward-moving actions to promote exploration and prevent excessive spinning
-        if prev_action in [0, 1, 2]:
-            total_reward += 2.0
+        # Initialize Reward
+        reward = 0.0
+        
+        # Reward Goal State (Moving Forward + large front dist + low left errors)
+        if front > 0.5 and (left_error < 0.1) and prev_action in [0,1,2]:
+            if front_left_error < 0.15 and rear_left_error < 0.15:
+                reward += 1
+            elif front_left_error < 0.15 or rear_left_error < 0.15:
+                reward += .5
         else:
-            total_reward -= 2.0
+                reward -= 0.1 # Living Penalty
 
-        # 5. Wall alignment bonus: Extra reward if front_left, left, and rear_left states match, indicating parallel alignment
-        if curr_front_left_state == curr_left_state == curr_rear_left_state:
-            total_reward += 7.0
+        # Penalize Collision
+        if front < self.collision_threshold:
+            reward -= 100
 
-        return total_reward
+        # Penalize Getting Lost
+        if front_left > 1.2 and left > 1.2 and rear_left > 1.2:
+            reward -= 100
+
+        return reward
     
     def is_terminal_state(self, segments, state):
         """Check if the current state is terminal."""
@@ -259,18 +221,11 @@ class SARSATrainNode(Node):
         if segments['front'] < self.collision_threshold:
             self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
             return True
-        elif segments['front_left'] < self.collision_threshold:
-            self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
-            return True
         
         # Lost state (4, 4, 4, 4) check
         if state == (4, 4, 4, 4):
-            self.lost_count += 1
-            if self.lost_count >= 10:
-                self.get_logger().info(f"Lost for 20 steps! Episode {self.episode} over")
-                return True
-        else:
-            self.lost_count = 0  # Reset if not in lost state
+            self.get_logger().info(f"Lost! Episode {self.episode} over")
+            return True
 
         # Step limit check
         if self.episode_steps >= self.max_steps:
@@ -348,47 +303,50 @@ class SARSATrainNode(Node):
         segments = self.get_lidar_segments()
         if segments is None:
             return
-        state = self.get_state(segments)
+        curr_state = self.get_state(segments)
 
         # 2. Select action (use stored prev_action from previous next_action, or select new if start)
         if self.prev_action is None or self.episode_steps == 0:
-            if state in self.q_table:
+            if curr_state in self.q_table:
                 if self.mode == 'train' and random.random() < self.epsilon:
-                    action = random.randint(0, 4)  # Random action (0-4)
+                    curr_action = random.randint(0, 4)  # Random action (0-4)
                 else:
-                    action = np.argmax(self.q_table[state])  # Best action
+                    curr_action = np.argmax(self.q_table[curr_state])  # Best action
             else:
-                action = 0  # Default to forward
-                self.get_logger().warn(f"State {state} not in Q-table")
+                curr_action = 0  # Default to forward
+                self.get_logger().warn(f"State {curr_state} not in Q-table")
         else:
-            action = self.prev_action  # Use the next_action from previous SARSA update
+            curr_action = self.prev_action  # Use the next_action from previous SARSA update
 
         # 3. Execute action
         cmd = TwistStamped()
         cmd.header = Header(stamp=self.get_clock().now().to_msg())
-        if action == 0:          # Forward
+        if curr_action == 0:          # Forward
             cmd.twist.linear.x = self.fwd_speed
             cmd.twist.angular.z = 0.0
-        elif action == 1:        # Forward Left
+        elif curr_action == 1:        # Forward Left
             cmd.twist.linear.x = self.fwd_speed
             cmd.twist.angular.z = self.turn_speed
-        elif action == 2:        # Forward Right
+        elif curr_action == 2:        # Forward Right
             cmd.twist.linear.x = self.fwd_speed
             cmd.twist.angular.z = -self.turn_speed
-        elif action == 3:        # Rotate Left
+        elif curr_action == 3:        # Rotate Left
             cmd.twist.linear.x = 0.0
             cmd.twist.angular.z = self.turn_speed
-        elif action == 4:        # Rotate Right
+        elif curr_action == 4:        # Rotate Right
             cmd.twist.linear.x = 0.0
             cmd.twist.angular.z = -self.turn_speed
         self.cmd_vel_pub.publish(cmd)
 
-        # 4. Update Q-table (in train mode)
+        # 4. Check if Terminal State
+        terminal_flag = self.is_terminal_state(segments, curr_state)
+
+        # 5. Update Q-table (in train mode)
         if self.mode == 'train':
             if self.prev_state is not None and self.prev_action is not None:
-                reward = self.get_reward(segments, self.prev_state, self.prev_action)
+                reward = self.get_reward(segments, self.prev_action)
                 self.episode_reward += reward
-                next_state = state
+                next_state = curr_state
 
                 if next_state in self.q_table:
                     if random.random() < self.epsilon:
@@ -400,7 +358,7 @@ class SARSATrainNode(Node):
                     self.get_logger().warn(f"Next state {next_state} not in Q-table")
 
                 q_old = self.q_table[self.prev_state][self.prev_action]
-                q_next = self.q_table[next_state][next_action] if not self.is_terminal_state(segments, next_state) else 0.0
+                q_next = self.q_table[next_state][next_action] if not terminal_flag else 0.0
                 q_new = q_old + self.alpha * (reward + self.gamma * q_next - q_old)
                 self.q_table[self.prev_state][self.prev_action] = np.clip(q_new, -1000.0, 1000.0)
 
@@ -410,22 +368,20 @@ class SARSATrainNode(Node):
                     f"Reward: {reward:.2f}, New Q: {self.q_table[self.prev_state][self.prev_action]:.2f}"
                 )
         else:
-            self.get_logger().info(f"Episode {self.episode}, Step {self.episode_steps}: State {state}, Action {self.actions[action]}")
-            next_action = np.argmax(self.q_table[state]) if state in self.q_table else 0
+            self.get_logger().info(f"Episode {self.episode}, Step {self.episode_steps}: State {curr_state}, Action {self.actions[action]}")
+            next_action = np.argmax(self.q_table[curr_state]) if curr_state in self.q_table else 0
 
         # 5. Store current state/action for next iteration
-        self.prev_state = state
+        self.prev_state = curr_state
         self.prev_action = next_action
         self.episode_steps += 1
 
-        # 6. Check for terminal state & save average reward
-        if self.mode == 'train' and self.is_terminal_state(segments, state):
-            avg_reward = self.episode_reward / max(self.episode_steps, 1)
-            self.get_logger().info(f"Episode {self.episode} ended. Average Reward: {avg_reward:.2f}")
-            self.avg_rewards.append([self.episode, avg_reward])
+        # 6. Check for terminal state & save total reward
+        if self.mode == 'train' and self.is_terminal_state(segments, curr_state):
+            self.get_logger().info(f"Episode {self.episode} ended. Total Reward: {self.episode_reward:.2f}")
             with open(self.reward_file, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([self.episode, avg_reward])
+                writer.writerow([self.episode, self.episode_reward])
             self.save_q_table()
             self.episode += 1
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
