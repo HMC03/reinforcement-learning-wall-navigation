@@ -63,7 +63,7 @@ class QLearnTrainNode(Node):
         self.alpha = 0.1 # Learning rate
         self.gamma = 0.99 # Discount factor
         self.epsilon_min = .05 # Minimum exploration rate
-        self.epsilon_decay = .97 # Exploration decay rate
+        self.epsilon_decay = .98 # Exploration decay rate
         self.epsilon = self.get_parameter('epsilon').get_parameter_value().double_value
         self.mode = self.get_parameter('mode').get_parameter_value().string_value
         
@@ -117,8 +117,8 @@ class QLearnTrainNode(Node):
                 writer.writerow(['Episode', 'Total_Reward'])
 
         # Initialize Episode Variables
-        self.max_episodes = 200
-        self.max_steps = 200
+        self.max_episodes = 250
+        self.max_steps = 500
         self.episode_steps = 0
         self.episode_reward = 0.0
         self.prev_state = None
