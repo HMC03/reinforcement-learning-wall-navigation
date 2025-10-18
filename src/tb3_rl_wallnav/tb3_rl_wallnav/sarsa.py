@@ -344,6 +344,7 @@ class SARSATrainNode(Node):
         terminal_flag = self.is_terminal_state(segments, curr_state)
 
         # 5. Update Q-table (in train mode)
+        next_action = curr_action
         if self.mode == 'train':
             if self.prev_state is not None and self.prev_action is not None:
                 reward = self.get_reward(segments, self.prev_action)
