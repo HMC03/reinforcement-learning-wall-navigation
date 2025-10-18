@@ -305,7 +305,7 @@ class QLearnTrainNode(Node):
             return
         curr_state = self.get_state(segments)
 
-        # 3. Select action
+        # 2. Select action
         if curr_state in self.q_table:
             if self.mode == 'train' and random.random() < self.epsilon:
                 curr_action = random.randint(0, 4)  # Random action (0-4)
@@ -315,7 +315,7 @@ class QLearnTrainNode(Node):
             curr_action = 0  # Default to forward
             self.get_logger().warn(f"State {curr_state} not in Q-table")
 
-        # 4. Execute action
+        # 3. Execute action
         cmd = TwistStamped()
         cmd.header = Header(stamp=self.get_clock().now().to_msg())
         if curr_action == 0:          # Forward
@@ -335,10 +335,10 @@ class QLearnTrainNode(Node):
             cmd.twist.angular.z = -self.turn_speed
         self.cmd_vel_pub.publish(cmd)
 
-        # 5. Check if Terminal State
+        # 4. Check if Terminal State
         terminal_flag = self.is_terminal_state(segments, curr_state)
 
-        # 6. Update Q-table (in train mode)
+        # 5. Update Q-table (in train mode)
         if self.mode == 'train':
             if self.prev_state is not None and self.prev_action is not None:
                 # Compute reward based on the *new* observation but previous action and state
