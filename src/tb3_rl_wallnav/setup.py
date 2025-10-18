@@ -33,9 +33,7 @@ setup(
         'console_scripts': [
             'lidar_debug = tb3_rl_wallnav.lidar_debug:main',
             'manual_qtable = tb3_rl_wallnav.manual_qtable:main',
-            'qlearn1 = tb3_rl_wallnav.qlearn1:main',
-            'qlearn2 = tb3_rl_wallnav.qlearn2:main',
-            'qlearn3 = tb3_rl_wallnav.qlearn3:main',
+            'qlearn = tb3_rl_wallnav.qlearn:main',
             'sarsa = tb3_rl_wallnav.sarsa:main',
         ],
     },
