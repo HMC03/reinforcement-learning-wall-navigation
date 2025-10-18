@@ -143,18 +143,17 @@ class SARSATrainNode(Node):
         deg = np.mod(self.lidar_angles, 360)  # Wrap angles to [0, 360)
         ranges = self.lidar_ranges
 
-        def avg_in_range(low, high):
+        def min10_in_range(low, high):
             mask = (deg >= low) & (deg < high)
             if not np.any(mask):
                 return 3.5
-            avg = np.mean(ranges[mask])
-            return min(max(avg, 0.0), 3.5)
+            return np.percentile(ranges[mask], 10)
 
         lidar_segments = {
-            "front":       (avg_in_range(0, 40) + avg_in_range(320, 360)) / 2,
-            "front_left":  avg_in_range(50, 70),
-            "left":        avg_in_range(70, 110),
-            "rear_left":   avg_in_range(110, 130),
+            "front":       min(min10_in_range(0, 40), min10_in_range(320, 360)),
+            "front_left":  min10_in_range(50, 70),
+            "left":        min10_in_range(70, 110),
+            "rear_left":   min10_in_range(110, 130),
         }
 
         return lidar_segments
