@@ -14,7 +14,7 @@ import time
 
 class SARSATrainNode(Node):
     def __init__(self):
-        super().__init__('sarsa3_node')
+        super().__init__('sarsa_node')
 
         # Publisher for robot velocity
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
@@ -70,7 +70,7 @@ class SARSATrainNode(Node):
         self.get_logger().info(f"Parameters: alpha={self.alpha}, gamma={self.gamma}, epsilon={self.epsilon}, mode={self.mode}") # Log parameters for debugging
 
         # Create/Initialize Q-Table & Reward file paths
-        script_path = os.path.abspath(__file__)  # Path to qlearn.py
+        script_path = os.path.abspath(__file__)  # Path to sarsa.py
         package_root = os.path.dirname(script_path)  # Start with tb3_rl_wallnav/tb3_rl_wallnav
         if 'build' in package_root or 'install' in package_root:
             # Navigate to src/tb3_rl_wallnav from build or install
@@ -86,7 +86,7 @@ class SARSATrainNode(Node):
         self.q_table = {}
         for state in itertools.product([0, 1, 2, 3, 4], repeat=4):
             self.q_table[state] = np.zeros(5)  # Initialize Q-values to zeros for all actions
-        self.q_table_file = os.path.join(self.qtable_dir, 'sarsa3_qtable.npy')
+        self.q_table_file = os.path.join(self.qtable_dir, 'sarsa_qtable.npy')
         if os.path.exists(self.q_table_file):
             loaded = np.load(self.q_table_file, allow_pickle=True).item()
             self.q_table.update(loaded)
@@ -95,7 +95,7 @@ class SARSATrainNode(Node):
             self.get_logger().info(f"Q-table file {self.q_table_file} not found, starting with empty Q-table")
 
         # Load/Initialize Rewards CSV
-        self.reward_file = os.path.join(self.reward_dir, 'sarsa3_rewards.csv')
+        self.reward_file = os.path.join(self.reward_dir, 'sarsa_rewards.csv')
         if os.path.exists(self.reward_file): # Check if reward file exists
             # Try to resume from last episode
             with open(self.reward_file, 'r') as f:
@@ -367,16 +367,17 @@ class SARSATrainNode(Node):
                     f"Reward: {reward:.2f}, New Q: {self.q_table[self.prev_state][self.prev_action]:.2f}"
                 )
         else:
-            self.get_logger().info(f"Episode {self.episode}, Step {self.episode_steps}: State {curr_state}, Action {self.actions[action]}")
+            self.get_logger().info(f"Episode {self.episode}, Step {self.episode_steps}: State {curr_state}, Action {self.actions[curr_action]}")
             next_action = np.argmax(self.q_table[curr_state]) if curr_state in self.q_table else 0
 
-        # 5. Store current state/action for next iteration
+        # 5. Store current state & next action for next iteration
         self.prev_state = curr_state
         self.prev_action = next_action
         self.episode_steps += 1
 
         # 6. Check for terminal state & save total reward
-        if self.mode == 'train' and self.is_terminal_state(segments, curr_state):
+        if self.mode == 'train' and terminal_flag:
+            terminal_flag = False
             self.get_logger().info(f"Episode {self.episode} ended. Total Reward: {self.episode_reward:.2f}")
             with open(self.reward_file, 'a', newline='') as f:
                 writer = csv.writer(f)
