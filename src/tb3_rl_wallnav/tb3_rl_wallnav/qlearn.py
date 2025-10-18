@@ -12,9 +12,9 @@ import random
 import csv
 import time
 
-class SARSATrainNode(Node):
+class QLearnTrainNode(Node):
     def __init__(self):
-        super().__init__('sarsa_node')
+        super().__init__('qlearn_node')
 
         # Publisher for robot velocity
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
@@ -72,7 +72,7 @@ class SARSATrainNode(Node):
         self.get_logger().info(f"Parameters: alpha={self.alpha}, gamma={self.gamma}, epsilon={self.epsilon}, mode={self.mode}") # Log parameters for debugging
 
         # Create/Initialize Q-Table & Reward file paths
-        script_path = os.path.abspath(__file__)  # Path to sarsa.py
+        script_path = os.path.abspath(__file__)  # Path to qlearn.py
         package_root = os.path.dirname(script_path)  # Start with tb3_rl_wallnav/tb3_rl_wallnav
         if 'build' in package_root or 'install' in package_root:
             # Navigate to src/tb3_rl_wallnav from build or install
@@ -88,7 +88,7 @@ class SARSATrainNode(Node):
         self.q_table = {}
         for state in itertools.product([0, 1, 2, 3, 4], repeat=4):
             self.q_table[state] = np.zeros(5)  # Initialize Q-values to zeros for all actions
-        self.q_table_file = os.path.join(self.qtable_dir, 'sarsa_qtable.npy')
+        self.q_table_file = os.path.join(self.qtable_dir, 'qlearn_qtable.npy')
         if os.path.exists(self.q_table_file):
             loaded = np.load(self.q_table_file, allow_pickle=True).item()
             self.q_table.update(loaded)
@@ -97,7 +97,7 @@ class SARSATrainNode(Node):
             self.get_logger().info(f"Q-table file {self.q_table_file} not found, starting with empty Q-table")
 
         # Load/Initialize Rewards CSV
-        self.reward_file = os.path.join(self.reward_dir, 'sarsa_rewards.csv')
+        self.reward_file = os.path.join(self.reward_dir, 'qlearn_rewards.csv')
         if os.path.exists(self.reward_file): # Check if reward file exists
             # Try to resume from last episode
             with open(self.reward_file, 'r') as f:
@@ -307,18 +307,15 @@ class SARSATrainNode(Node):
             return
         curr_state = self.get_state(segments)
 
-        # 2. Select action (use stored prev_action from previous next_action, or select new if start)
-        if self.prev_action is None or self.episode_steps == 0:
-            if curr_state in self.q_table:
-                if self.mode == 'train' and random.random() < self.epsilon:
-                    curr_action = random.randint(0, 4)  # Random action (0-4)
-                else:
-                    curr_action = np.argmax(self.q_table[curr_state])  # Best action
+        # 2. Select action
+        if curr_state in self.q_table:
+            if self.mode == 'train' and random.random() < self.epsilon:
+                curr_action = random.randint(0, 4)  # Random action (0-4)
             else:
-                curr_action = 0  # Default to forward
-                self.get_logger().warn(f"State {curr_state} not in Q-table")
+                curr_action = np.argmax(self.q_table[curr_state])  # Best action
         else:
-            curr_action = self.prev_action  # Use the next_action from previous SARSA update
+            curr_action = 0  # Default to forward
+            self.get_logger().warn(f"State {curr_state} not in Q-table")
 
         # 3. Execute action
         cmd = TwistStamped()
@@ -346,22 +343,16 @@ class SARSATrainNode(Node):
         # 5. Update Q-table (in train mode)
         if self.mode == 'train':
             if self.prev_state is not None and self.prev_action is not None:
+                # Compute reward based on the *new* observation but previous action and state
                 reward = self.get_reward(segments, self.prev_action)
                 self.episode_reward += reward
                 next_state = curr_state
 
-                if next_state in self.q_table:
-                    if random.random() < self.epsilon:
-                        next_action = random.randint(0, 4)
-                    else:
-                        next_action = np.argmax(self.q_table[next_state])
-                else:
-                    next_action = 0
-                    self.get_logger().warn(f"Next state {next_state} not in Q-table")
-
+                # Update Q-table
                 q_old = self.q_table[self.prev_state][self.prev_action]
-                q_next = self.q_table[next_state][next_action] if not terminal_flag else 0.0
-                q_new = q_old + self.alpha * (reward + self.gamma * q_next - q_old)
+                q_max_next = 0.0
+                if not terminal_flag: q_max_next = np.max(self.q_table[next_state])
+                q_new = q_old + self.alpha * (reward + self.gamma * q_max_next - q_old)
                 self.q_table[self.prev_state][self.prev_action] = np.clip(q_new, -1000.0, 1000.0)
 
                 self.get_logger().info(
@@ -371,14 +362,13 @@ class SARSATrainNode(Node):
                 )
         else:
             self.get_logger().info(f"Episode {self.episode}, Step {self.episode_steps}: State {curr_state}, Action {self.actions[curr_action]}")
-            next_action = np.argmax(self.q_table[curr_state]) if curr_state in self.q_table else 0
-
-        # 5. Store current state & next action for next iteration
+            
+        # Store current state/action for next iteration
         self.prev_state = curr_state
-        self.prev_action = next_action
+        self.prev_action = curr_action
         self.episode_steps += 1
-
-        # 6. Check for terminal state & save total reward
+        
+        # Check for terminal state & save total reward
         if self.mode == 'train' and terminal_flag:
             terminal_flag = False
             self.get_logger().info(f"Episode {self.episode} ended. Total Reward: {self.episode_reward:.2f}")
@@ -399,7 +389,7 @@ class SARSATrainNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = SARSATrainNode()
+    node = QLearnTrainNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
