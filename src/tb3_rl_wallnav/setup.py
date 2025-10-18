@@ -36,6 +36,7 @@ setup(
             'qlearn1 = tb3_rl_wallnav.qlearn1:main',
             'qlearn2 = tb3_rl_wallnav.qlearn2:main',
             'qlearn3 = tb3_rl_wallnav.qlearn3:main',
+            'sarsa3 = tb3_rl_wallnav.sarsa3:main',
         ],
     },
 )
