@@ -119,7 +119,7 @@ class SARSATrainNode(Node):
                 writer.writerow(['Episode', 'Total_Reward'])
 
         # Initialize Episode Variables
-        self.max_episodes = 500
+        self.max_episodes = 600
         self.max_steps = 250
         self.episode_steps = 0
         self.episode_reward = 0.0
