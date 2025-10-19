@@ -26,11 +26,6 @@ class QLearnTrainNode(Node):
             3: "rotate_left",
             4: "rotate_right",
         }
-        # Action parameters
-        self.target_left_dist = 0.5
-        self.target_angle_dist = 0.6
-        self.fwd_speed = 0.15
-        self.turn_speed = 0.3
 
         # Subscriber for LIDAR data
         self.scan_sub = self.create_subscription(
@@ -53,10 +48,10 @@ class QLearnTrainNode(Node):
             {'x_pose': 0.5, 'y_pose': 1.5, 'z_quat': 0.0, 'w_quat': 1.0}, # Turn right 90 at L shape corner
             {'x_pose': 2.5, 'y_pose': 0.5, 'z_quat': 0.707, 'w_quat': 0.707} # Turn left 90 at L shape corner
         ]
-        self.collision_threshold = 0.2
+        self.collision_threshold = 0.3
 
-        # Q-Learn Control loop (5Hz)
-        self.timer = self.create_timer(0.2, self.control_loop)
+        # Q-Learn Control loop (10Hz)
+        self.timer = self.create_timer(0.1, self.control_loop)
         
         # Declare ROS parameters
         self.declare_parameter('epsilon', 1.0)  # Exploration rate
@@ -65,7 +60,7 @@ class QLearnTrainNode(Node):
         self.alpha = 0.1 # Learning rate
         self.gamma = 0.99 # Discount factor
         self.epsilon_min = .05 # Minimum exploration rate
-        self.epsilon_decay = .98 # Exploration decay rate
+        self.epsilon_decay = .975 # Exploration decay rate
         self.epsilon = self.get_parameter('epsilon').get_parameter_value().double_value
         self.mode = self.get_parameter('mode').get_parameter_value().string_value
         
@@ -86,7 +81,7 @@ class QLearnTrainNode(Node):
 
         # Load/Initialize Q-Table to 0
         self.q_table = {}
-        for state in itertools.product([0, 1, 2, 3, 4], repeat=4):
+        for state in itertools.product([0, 1, 2, 3], repeat=4):
             self.q_table[state] = np.zeros(5)  # Initialize Q-values to zeros for all actions
         self.q_table_file = os.path.join(self.qtable_dir, 'qlearn_qtable.npy')
         if os.path.exists(self.q_table_file):
@@ -119,8 +114,8 @@ class QLearnTrainNode(Node):
                 writer.writerow(['Episode', 'Total_Reward'])
 
         # Initialize Episode Variables
-        self.max_episodes = 500
-        self.max_steps = 250
+        self.max_episodes = 250
+        self.max_steps = 500
         self.episode_steps = 0
         self.episode_reward = 0.0
         self.prev_state = None
@@ -169,10 +164,8 @@ class QLearnTrainNode(Node):
                 return 1  # Close
             elif dist < 0.9:
                 return 2  # Medium
-            elif dist < 1.2:
-                return 3 # Far
             else:
-                return 4 # Very Far
+                return 3 # Far
 
         return (
             categorize(segments['front']),
@@ -181,57 +174,46 @@ class QLearnTrainNode(Node):
             categorize(segments['rear_left'])
         )
 
-    def get_reward(self, segments, prev_action):
-        """Compute reward based on LIDAR segments and previous action for left-wall following."""
-        
-        # Compute categories for the new observation (after action)
-        front = segments['front']
-        front_left = segments['front_left']
-        left = segments['left']
-        rear_left = segments['rear_left']
-        
-        front_left_error = abs(front_left - self.target_angle_dist)
-        left_error = abs(left - self.target_left_dist)
-        rear_left_error = abs(rear_left - self.target_angle_dist)
-
+    def get_reward(self, curr_state, prev_action):
+        """Compute reward based on discrete state and previous action."""
         # Initialize Reward
         reward = 0.0
-        
-        # Reward Goal State (Moving Forward + large front dist + low left errors)
-        if front > 0.5 and (left_error < 0.1) and prev_action in [0,1,2]:
-            if front_left_error < 0.15 and rear_left_error < 0.15:
-                reward += 1
-            elif front_left_error < 0.15 or rear_left_error < 0.15:
-                reward += .5
+
+        # Reward Goal State:
+        if curr_state[0] >= 2 and curr_state[2] == 1: # Front State beyond 0.6m & Left state 0.3-0.6m
+            if curr_state[1] > 0 and curr_state[1] == curr_state[3]: # Front Left == Rear Left & greater than 0.3m
+                if prev_action in [0,1,2]: # Last action was moving forward
+                    reward += 1
         else:
-                reward -= 0.1 # Living Penalty
+            reward -= 1 # Living Penalty
 
         # Penalize Collision
-        if front < self.collision_threshold:
+        if curr_state[0] == 0:
             reward -= 100
 
         # Penalize Getting Lost
-        if front_left > 1.2 and left > 1.2 and rear_left > 1.2:
+        if curr_state[1] == 3 and curr_state[2] == 3 and curr_state[3] == 3:
             reward -= 100
 
         return reward
     
-    def is_terminal_state(self, segments, state):
+    def is_terminal_state(self, curr_state):
         """Check if the current state is terminal."""
-        # Collision check
-        if segments['front'] < self.collision_threshold:
-            self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
-            return True
-        
-        # Lost state (x, 4, 4, 4) check
-        if state[1] == 4 and state[2] == 4 and state[3] == 4:
-            self.get_logger().info(f"Lost! Episode {self.episode} over")
-            return True
+        if self.mode == 'train':
+            # Collision check
+            if curr_state[0] == 0:
+                self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
+                return True
+            
+            # Lost state (x, 3, 3, 3)
+            if curr_state[1] == 3 and curr_state[2] == 3 and curr_state[3] == 3:
+                self.get_logger().info(f"Lost! Episode {self.episode} over")
+                return True
 
-        # Step limit check
-        if self.episode_steps >= self.max_steps:
-            self.get_logger().info(f"Reached max steps ({self.max_steps})! Episode {self.episode} over")
-            return True
+            # Step limit check
+            if self.episode_steps >= self.max_steps:
+                self.get_logger().info(f"Reached max steps ({self.max_steps})! Episode {self.episode} over")
+                return True
 
         return False
 
@@ -275,7 +257,6 @@ class QLearnTrainNode(Node):
         # Reset episode variables
         self.episode_steps = 0
         self.episode_reward = 0.0
-        self.lost_count = 0
         self.prev_state = None
         self.prev_action = None
         self.lidar_ranges = None
@@ -320,6 +301,8 @@ class QLearnTrainNode(Node):
         # 3. Execute action
         cmd = TwistStamped()
         cmd.header = Header(stamp=self.get_clock().now().to_msg())
+        self.fwd_speed = 0.15
+        self.turn_speed = 0.3
         if curr_action == 0:          # Forward
             cmd.twist.linear.x = self.fwd_speed
             cmd.twist.angular.z = 0.0
@@ -338,13 +321,13 @@ class QLearnTrainNode(Node):
         self.cmd_vel_pub.publish(cmd)
 
         # 4. Check if Terminal State
-        terminal_flag = self.is_terminal_state(segments, curr_state)
+        terminal_flag = self.is_terminal_state(curr_state)
 
         # 5. Update Q-table (in train mode)
         if self.mode == 'train':
             if self.prev_state is not None and self.prev_action is not None:
                 # Compute reward based on the *new* observation but previous action and state
-                reward = self.get_reward(segments, self.prev_action)
+                reward = self.get_reward(curr_state, self.prev_action)
                 self.episode_reward += reward
                 next_state = curr_state
 
