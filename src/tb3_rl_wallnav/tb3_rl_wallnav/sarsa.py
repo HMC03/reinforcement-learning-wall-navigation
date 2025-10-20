@@ -50,8 +50,8 @@ class SARSATrainNode(Node):
         ]
         self.collision_threshold = 0.3
 
-        # Q-Learn Control loop (10Hz)
-        self.timer = self.create_timer(0.1, self.control_loop)
+        # Q-Learn Control loop (5Hz)
+        self.timer = self.create_timer(0.2, self.control_loop)
         
         # Declare ROS parameters
         self.declare_parameter('epsilon', 1.0)  # Exploration rate
@@ -60,7 +60,7 @@ class SARSATrainNode(Node):
         self.alpha = 0.1 # Learning rate
         self.gamma = 0.99 # Discount factor
         self.epsilon_min = .05 # Minimum exploration rate
-        self.epsilon_decay = .975 # Exploration decay rate
+        self.epsilon_decay = .985 # Exploration decay rate
         self.epsilon = self.get_parameter('epsilon').get_parameter_value().double_value
         self.mode = self.get_parameter('mode').get_parameter_value().string_value
         
@@ -115,7 +115,7 @@ class SARSATrainNode(Node):
 
         # Initialize Episode Variables
         self.max_episodes = 250
-        self.max_steps = 500
+        self.max_steps = 300
         self.episode_steps = 0
         self.episode_reward = 0.0
         self.prev_state = None
@@ -174,26 +174,54 @@ class SARSATrainNode(Node):
             categorize(segments['rear_left'])
         )
 
-    def get_reward(self, curr_state, prev_action):
+    def get_reward(self, curr_state, prev_action, prev_state):
         """Compute reward based on discrete state and previous action."""
-        # Initialize Reward
-        reward = 0.0
+        curr_front, curr_front_left, curr_left, curr_rear_left = curr_state
+        prev_front, prev_front_left, prev_left, prev_rear_left = prev_state
 
-        # Reward Goal State:
-        if curr_state[0] >= 2 and curr_state[2] == 1: # Front State beyond 0.6m & Left state 0.3-0.6m
-            if curr_state[1] > 0 and curr_state[1] == curr_state[3]: # Front Left == Rear Left & greater than 0.3m
-                if prev_action in [0,1,2]: # Last action was moving forward
-                    reward += 1
+        reward = 0.0  # Start neutral, no living penalty
+
+        # Collision penalty (harsh to avoid walls)
+        if curr_front == 0 and prev_front != 0:
+            return -20.0  # Terminal, big penalty
+
+        # Lost penalty (if no wall on left side)
+        if curr_front > 0 and curr_front_left == 3 and curr_left == 3 and curr_rear_left == 3:
+            if prev_front_left != 3 or prev_left != 3 or prev_rear_left != 3:  # Newly lost
+                reward -= 15.0  # Penalty, but not as harsh to allow recovery
         else:
-            reward -= 1 # Living Penalty
+            # Proximity to wall (core wall-following)
+            if curr_left == 1:  # Ideal close (0.3-0.6m)
+                reward += 3.0
+            elif curr_left == 2:  # Acceptable medium (0.6-0.9m)
+                reward += 1.0
+            elif curr_left == 0:  # Too close, risk of collision
+                reward -= 5.0
+            elif curr_left == 3:  # Too far, drifting away
+                reward -= 5.0
 
-        # Penalize Collision
-        if curr_state[0] == 0:
-            reward -= 100
+            # Clear path ahead
+            if curr_front >= 2:  # Medium/far (>0.6m)
+                reward += 2.0
+            elif curr_front == 1:  # Close, caution
+                reward -= 2.0
 
-        # Penalize Getting Lost
-        if curr_state[1] == 3 and curr_state[2] == 3 and curr_state[3] == 3:
-            reward -= 100
+            # Alignment (parallel to wall)
+            alignment_diff = abs(curr_front_left - curr_rear_left)
+            if alignment_diff <= 1 and curr_front_left > 0 and curr_rear_left > 0:
+                reward += 2.0  # Bonus for parallel
+            elif alignment_diff > 2:
+                reward -= 3.0  # Penalty for misalignment (e.g., turning too sharp)
+
+        # Action-specific bonus for progress (only if not lost/collided)
+        if prev_action in [0, 1, 2]:  # Forward actions
+            # Check if state improved (e.g., wall closer or maintained ideal)
+            if curr_left <= prev_left and curr_left in [1, 2] and curr_front >= prev_front:
+                reward += 2.0  # Progress toward/ maintaining good state
+        else:  # Rotate actions
+            # Small bonus if rotation brings wall closer (e.g., from far to close)
+            if curr_left < prev_left and curr_left in [1, 2]:
+                reward += 1.0  # Recovery from drift
 
         return reward
     
@@ -205,8 +233,8 @@ class SARSATrainNode(Node):
                 self.get_logger().info(f"Collision Detected! Episode {self.episode} over")
                 return True
             
-            # Lost state (x, 3, 3, 3)
-            if curr_state[1] == 3 and curr_state[2] == 3 and curr_state[3] == 3:
+            # Lost state (1+, 3, 3, 3)
+            if curr_state[0] > 0 and curr_state[1] == 3 and curr_state[2] == 3 and curr_state[3] == 3:
                 self.get_logger().info(f"Lost! Episode {self.episode} over")
                 return True
 
@@ -224,22 +252,31 @@ class SARSATrainNode(Node):
             return
 
         # Alternate between spawn locations
-        self.last_reset = (self.last_reset + 1) % 4
+        self.last_reset = (self.last_reset + 1) % len(self.reset_locations)
         location = self.reset_locations[self.last_reset]
+
+        # Add small randomization
+        x = location['x_pose'] + random.uniform(-0.1, 0.1)
+        y = location['y_pose'] + random.uniform(-0.1, 0.1)
+        yaw_jitter = random.uniform(-np.deg2rad(25), np.deg2rad(25))
+        base_yaw = np.arctan2(2 * location['w_quat'] * location['z_quat'], 1 - 2 * location['z_quat'] ** 2)
+        yaw = base_yaw + yaw_jitter
+        z = np.sin(yaw / 2)
+        w = np.cos(yaw / 2)
 
         # Prepare request
         request = SetEntityPose.Request()
         request.entity.name = 'burger'
         request.entity.type = 2
-        request.pose.position.x = location['x_pose']
-        request.pose.position.y = location['y_pose']
+        request.pose.position.x = x
+        request.pose.position.y = y
         request.pose.position.z = 0.0
-        request.pose.orientation.z = location['z_quat']
-        request.pose.orientation.w = location['w_quat']
+        request.pose.orientation.z = z
+        request.pose.orientation.w = w
 
         # Send request
         self.set_pose_client.call_async(request)
-        self.get_logger().info(f"Reset robot to ({location['x_pose']}, {location['y_pose']})")
+        self.get_logger().info(f"Reset robot to ({x}, {y}) with yaw {yaw}")
         time.sleep(0.5)
 
         # Stop robot motion immediately
@@ -330,7 +367,7 @@ class SARSATrainNode(Node):
         next_action = curr_action
         if self.mode == 'train':
             if self.prev_state is not None and self.prev_action is not None:
-                reward = self.get_reward(curr_state, self.prev_action)
+                reward = self.get_reward(curr_state, self.prev_action, self.prev_state)
                 self.episode_reward += reward
                 next_state = curr_state
 
@@ -364,7 +401,6 @@ class SARSATrainNode(Node):
 
         # 6. Check for terminal state & save total reward
         if self.mode == 'train' and terminal_flag:
-            terminal_flag = False
             self.get_logger().info(f"Episode {self.episode} ended. Total Reward: {self.episode_reward:.2f}")
             with open(self.reward_file, 'a', newline='') as f:
                 writer = csv.writer(f)
