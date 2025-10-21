@@ -48,7 +48,6 @@ class SARSATrainNode(Node):
             {'x_pose': 0.5, 'y_pose': 1.5, 'z_quat': 0.0, 'w_quat': 1.0}, # Turn right 90 at L shape corner
             {'x_pose': 2.5, 'y_pose': 0.5, 'z_quat': 0.707, 'w_quat': 0.707} # Turn left 90 at L shape corner
         ]
-        self.collision_threshold = 0.3
 
         # Q-Learn Control loop (5Hz)
         self.timer = self.create_timer(0.2, self.control_loop)
@@ -59,8 +58,8 @@ class SARSATrainNode(Node):
 
         self.alpha = 0.1 # Learning rate
         self.gamma = 0.99 # Discount factor
-        self.epsilon_min = .05 # Minimum exploration rate
-        self.epsilon_decay = .985 # Exploration decay rate
+        self.epsilon_min = 0.05 # Minimum exploration rate (low for convergence)
+        self.epsilon_decay = 0.98 # Decay rate of epsilon
         self.epsilon = self.get_parameter('epsilon').get_parameter_value().double_value
         self.mode = self.get_parameter('mode').get_parameter_value().string_value
         
@@ -114,7 +113,7 @@ class SARSATrainNode(Node):
                 writer.writerow(['Episode', 'Total_Reward'])
 
         # Initialize Episode Variables
-        self.max_episodes = 250
+        self.max_episodes = 200
         self.max_steps = 300
         self.episode_steps = 0
         self.episode_reward = 0.0
@@ -178,50 +177,56 @@ class SARSATrainNode(Node):
         """Compute reward based on discrete state and previous action."""
         curr_front, curr_front_left, curr_left, curr_rear_left = curr_state
         prev_front, prev_front_left, prev_left, prev_rear_left = prev_state
+        
+        # Initialize reward with living penalty
+        reward = 0
 
-        reward = 0.0  # Start neutral, no living penalty
+        # Reward moving closer to ideal wall distance
+        if curr_left in [1, 2] and prev_left not in [1, 2]:
+            reward += 2
+        elif curr_left == 0 and prev_left != 0:  # Too close penalty
+            reward -= 3.0
+        elif curr_left == 3 and prev_left != 3:  # Lost penalty
+            reward -= 3.0
 
-        # Collision penalty (harsh to avoid walls)
-        if curr_front == 0 and prev_front != 0:
-            return -20.0  # Terminal, big penalty
+        # Reward gaining front distance
+        if curr_front > prev_front:
+            reward += 2
+        elif prev_front > curr_front:
+            reward -= 3
 
-        # Lost penalty (if no wall on left side)
+        # Reward wall alignment
+        curr_alignment_diff = abs(curr_front_left - curr_rear_left)
+        prev_alignment_diff = abs(prev_front_left - prev_rear_left)
+        if curr_alignment_diff in [0,1] and prev_alignment_diff not in [0,1]:
+            reward += 1
+        elif curr_alignment_diff > prev_alignment_diff and curr_alignment_diff > 1:
+            reward -= 1
+
+        # Reward forward movement in ideal state
+        if prev_front >= 2 and prev_left in [1, 2] and prev_alignment_diff <= 1:
+            if prev_action in [0, 1, 2]:
+                reward += 0.5
+            elif prev_action in [3, 4]:
+                reward -= 1
+
+        # Penalize driving into wall
+        if prev_front == 1 and prev_action in [0, 1, 3]:
+            reward -= 5
+        elif prev_front_left <= 1 and prev_action in [1, 3]:
+            reward -= 5
+
+        # Penalize turning away from wall
+        if prev_front == 3 and prev_front_left >= 2 and prev_action in [2, 4]:
+            reward -= 5
+
+        # Penalize getting lost (terminal state)
         if curr_front > 0 and curr_front_left == 3 and curr_left == 3 and curr_rear_left == 3:
-            if prev_front_left != 3 or prev_left != 3 or prev_rear_left != 3:  # Newly lost
-                reward -= 15.0  # Penalty, but not as harsh to allow recovery
-        else:
-            # Proximity to wall (core wall-following)
-            if curr_left == 1:  # Ideal close (0.3-0.6m)
-                reward += 3.0
-            elif curr_left == 2:  # Acceptable medium (0.6-0.9m)
-                reward += 1.0
-            elif curr_left == 0:  # Too close, risk of collision
-                reward -= 5.0
-            elif curr_left == 3:  # Too far, drifting away
-                reward -= 5.0
-
-            # Clear path ahead
-            if curr_front >= 2:  # Medium/far (>0.6m)
-                reward += 2.0
-            elif curr_front == 1:  # Close, caution
-                reward -= 2.0
-
-            # Alignment (parallel to wall)
-            alignment_diff = abs(curr_front_left - curr_rear_left)
-            if alignment_diff <= 1 and curr_front_left > 0 and curr_rear_left > 0:
-                reward += 2.0  # Bonus for parallel
-            elif alignment_diff > 2:
-                reward -= 3.0  # Penalty for misalignment (e.g., turning too sharp)
-
-        # Action-specific bonus for progress (only if not lost/collided)
-        if prev_action in [0, 1, 2]:  # Forward actions
-            # Check if state improved (e.g., wall closer or maintained ideal)
-            if curr_left <= prev_left and curr_left in [1, 2] and curr_front >= prev_front:
-                reward += 2.0  # Progress toward/ maintaining good state
-        else:  # Rotate actions
-            # Small bonus if rotation brings wall closer (e.g., from far to close)
-            if curr_left < prev_left and curr_left in [1, 2]:
-                reward += 1.0  # Recovery from drift
+            reward -= 10
+        
+        # Penalize Collision (terminal state)
+        if curr_front == 0:
+            reward -= 10
 
         return reward
     
