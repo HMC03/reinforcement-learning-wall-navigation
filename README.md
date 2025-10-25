@@ -130,35 +130,28 @@ This section showcases key results from training and demonstrations of the polic
 
 ### Simulation Environment
 * `turtlebot3_burger.png`: TurtleBot3 Burger model used in this project
-
-    <img src="src/tb3_rl_wallnav/media/turtlebot3_burger.png" width=500 height="auto">
+    <img src="src/tb3_rl_wallnav/media/turtlebot3_burger.png" width=80% height="auto">
 
 * `largemaze_world.png`: Top-down view of the custom large maze used for training and testing.
-
-    <img src="src/tb3_rl_wallnav/media/largemaze_world.png" width=500 height="auto">
+    <img src="src/tb3_rl_wallnav/media/largemaze_world.png" width=80% height="auto">
 
 ### Training Results
 
 * `rewards_comparison.png`: Plot comparing total rewards over episodes for Q-learning vs. SARSA (generated via `plot_rewards.py` with moving average).
-
-    <img src="src/tb3_rl_wallnav/media/rewards_comparison.png" width=500 height="auto">
+    <img src="src/tb3_rl_wallnav/media/rewards_comparison.png" width=80% height="auto">
 
 ### Policy Demonstrations
-* [`manual_policy_demo_10x.mp4`](src/tb3_rl_wallnav/media/manual_policy_demo_10x.mp4): Video of the manual Q-table policy navigating the maze (sped up 10x for brevity).
+* `manual_policy_demo_10x.mp4`: Video of the manual Q-table policy navigating the maze (sped up 10x for brevity).
+    <a href="https://youtu.be/IlXwCysuNBk"><img src="src/tb3_rl_wallnav/media/manual_thumbnail.png" width=80% height="auto"></a>
 
-    <video src="src/tb3_rl_wallnav/media/manual_policy_demo_10x.mp4" controls width=500 height="auto"></video>
-
-* [`qlearn_policy_demo_10x.mp4`](src/tb3_rl_wallnav/media/qlearn_policy_demo_10x.mp4): Video of the trained Q-learning policy navigating the maze (sped up 10x).
-
-    <video src="src/tb3_rl_wallnav/media/qlearn_policy_demo_10x.mp4" controls width=500 height="auto"></video>
+* `qlearn_policy_demo_10x.mp4`: Video of the trained Q-learning policy navigating the maze (sped up 10x).
+    <a href="https://youtu.be/cb2j77RnSZY"><img src="src/tb3_rl_wallnav/media/qlearn_thumbnail.png" width=80% height="auto"></a>
     
-* [`sarsa_policy_demo_10x.mp4`](src/tb3_rl_wallnav/media/sarsa_policy_demo_10x.mp4): Video of the trained SARSA policy navigating the maze (sped up 10x).
-
-    <video src="src/tb3_rl_wallnav/media/sarsa_policy_demo_10x.mp4" controls width=500 height="auto"></video>
+* `sarsa_policy_demo_10x.mp4`: Video of the trained SARSA policy navigating the maze (sped up 10x).
+    <a href="https://youtu.be/YhoA3lS6U7A"><img src="src/tb3_rl_wallnav/media/sarsa_thumbnail.png" width=80% height="auto"></a>
 
 ### State Space Visualization
 
 * `lidar_state_space.png`: Diagram illustrating the LIDAR segmentation into four regions (front, front_left, left, rear_left) around a circle, with distance categories (0-4) highlighted for state discretization.
-
-    <img src="src/tb3_rl_wallnav/media/lidar_state_space.png" width=500 height="auto">
+    <img src="src/tb3_rl_wallnav/media/lidar_state_space.png" width=80% height="auto">
 
