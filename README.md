@@ -41,6 +41,11 @@ The repository includes submodules for TurtleBot3 dependencies and a custom ROS2
     source install/setup.bash
     ```
 
+5. Define robot model:
+    ```bash
+    export TURTLEBOT3_MODEL=burger
+    ```
+
 ## Repository Structure
 
 * `src/`: Source code directory.
