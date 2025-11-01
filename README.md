@@ -1,4 +1,4 @@
-# Reinforcement Learning Wall Navigation for TurtleBot3
+# ROS2 Turtlebot3 Reinforcement Learning Wall Following
 
 ## Overview
 This project implements reinforcement learning algorithms—Q-learning and SARSA—for enabling a TurtleBot3 robot to navigate a maze by following the left wall. It compares the performance of these methods against each other and a manually created Q-table policy. The simulation is conducted in Gazebo using a custom large maze environment. Key features include training scripts, reward tracking, Q-table conversion tools, and visualization utilities.
